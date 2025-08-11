@@ -53,7 +53,7 @@ function RootLayoutNav() {
     
     if (user) {
       // If user is logged in, send them to the main app
-      router.replace('/(app)');
+      router.replace('/(tabs)');
     } else {
       // If user is not logged in, send them to the login screen
       router.replace('/(auth)/login');
@@ -69,8 +69,8 @@ function RootLayoutNav() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
-        {/* The (app) group is for logged-in users. Hide the header. */}
-        <Stack.Screen name="(app)" options={{ headerShown: false }} />
+        {/* The (tabs) group is for logged-in users. Hide the header. */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         
         {/* The (auth) group is for logged-out users. Hide the header. */}
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
