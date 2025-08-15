@@ -24,7 +24,19 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
 // --- UPDATED AUTH INITIALIZATION ---
-// This new setup tells Firebase to save the user's login to the phone's storage
-export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(ReactNativeAsyncStorage)
-});
+// This setup works for both web and mobile
+import { Platform } from 'react-native';
+
+let auth;
+if (Platform.OS === 'web') {
+  // For web, use the default auth
+  const { getAuth } = require('firebase/auth');
+  auth = getAuth(app);
+} else {
+  // For mobile, use React Native persistence
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+  });
+}
+
+export { auth };

@@ -14,7 +14,7 @@ export default function CoinScreen() {
       <Text style={styles.header}>Your Earnings</Text>
       
       <View style={styles.summaryBox}>
-        <Text style={styles.totalEarnedText}>Total Earned: ₹{totalEarned}</Text>
+        <Text style={styles.totalEarnedText}>Total Earned: ₹{totalEarned.toFixed(2)}</Text>
         <Text style={styles.lifetimeStepsText}>Based on {lifetimeSteps} lifetime steps</Text>
       </View>
 

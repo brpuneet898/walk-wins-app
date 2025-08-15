@@ -16,11 +16,9 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "permissions": [
-        "android.permission.ACTIVITY_RECOGNITION"
-      ],
+      "permissions": ["android.permission.ACTIVITY_RECOGNITION"],
       "edgeToEdgeEnabled": true,
-      "package": "com.devanshu898.frontend"
+      "package": "com.praaaaaaaaaaaaanshu.walkwins"
     },
     "web": {
       "bundler": "metro",
@@ -45,7 +43,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "7c18fb9a-ba30-4a1c-b482-b2131b091932"
+        "projectId": "a17d2ff5-a435-499e-9ff6-11537c870768"
       }
     }
   }
