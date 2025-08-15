@@ -1,4 +1,6 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import { auth, db } from '../firebaseConfig';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
 // A type for a single daily record
 export interface DailyRecord {
@@ -66,6 +68,57 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
   // Boost state - update every minute
   const [isBoostActive, setIsBoostActive] = useState(false);
   const [boostType, setBoostType] = useState<'sunrise' | 'sunset' | null>(null);
+
+  // Load coins from Firebase when user logs in
+  useEffect(() => {
+    const loadUserCoins = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            const userCoins = userData.coins || 0;
+            setCoins(userCoins);
+
+            // Initialize missing fields for existing users
+            const updates = {};
+            if (userData.coins === undefined) {
+              updates.coins = 0;
+            }
+            if (userData.referralCode === undefined && userData.username) {
+              // Generate referral code for existing users
+              const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+              updates.referralCode = `${userData.username.toUpperCase().slice(0, 4)}${randomNum}`;
+            }
+            if (userData.totalReferrals === undefined) {
+              updates.totalReferrals = 0;
+            }
+
+            if (Object.keys(updates).length > 0) {
+              await updateDoc(doc(db, 'users', user.uid), updates);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading user coins:', error);
+        }
+      }
+    };
+
+    // Load coins when component mounts
+    loadUserCoins();
+
+    // Listen for auth state changes
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        loadUserCoins();
+      } else {
+        setCoins(0); // Reset coins when user logs out
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Check boost status every minute
   useEffect(() => {

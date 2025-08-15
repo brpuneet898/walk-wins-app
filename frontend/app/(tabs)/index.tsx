@@ -19,9 +19,7 @@ export default function HomeScreen() {
   const [todaysSteps, setTodaysSteps] = useState(0);
   const [isPedometerAvailable, setIsPedometerAvailable] = useState(false);
   const [dailyStepGoal, setDailyStepGoal] = useState(3000); // State for the daily step goal
-  const [previousSteps, setPreviousSteps] = useState(0); // Track previous steps for coin calculation
-
-  const { isLoggingOut, coins, setCoins, isBoostActive, boostType } = useSteps();
+  const { isLoggingOut, isBoostActive, boostType } = useSteps();
   const isSyncing = useRef(false);
   const lastStepValueFromListener = useRef(0);
   const isInitialized = useRef(false);
@@ -117,15 +115,7 @@ export default function HomeScreen() {
             const newSteps = prevSteps + incrementStep;
             console.log('New total steps:', newSteps);
 
-            // Calculate coins earned
-            const baseRate = 0.01;
-            const currentRate = isBoostActive ? baseRate * 2 : baseRate;
-            const coinsEarned = incrementStep * currentRate;
 
-            console.log(`Boost Active: ${isBoostActive}, Boost Type: ${boostType}`);
-            console.log(`Base Rate: ${baseRate}, Current Rate: ${currentRate}`);
-            console.log(`Earned ${coinsEarned} coins (${incrementStep} steps × ${currentRate} rate)`);
-            setCoins(prevCoins => prevCoins + coinsEarned);
 
             return newSteps;
           });
@@ -242,16 +232,7 @@ export default function HomeScreen() {
           style={styles.testButton}
           onPress={() => {
             console.log('Manual step button pressed');
-            console.log(`Current boost status: Active=${isBoostActive}, Type=${boostType}`);
-
-            // Manually calculate coins for testing
-            const baseRate = 0.01;
-            const currentRate = isBoostActive ? baseRate * 2 : baseRate;
-            const coinsEarned = 10 * currentRate;
-
-            console.log(`Adding 10 steps with rate ${currentRate}, earning ${coinsEarned} coins`);
             setTodaysSteps(prev => prev + 10);
-            setCoins(prevCoins => prevCoins + coinsEarned);
           }}
         >
           <Text style={styles.testButtonText}>Add 10 Steps (Test)</Text>
