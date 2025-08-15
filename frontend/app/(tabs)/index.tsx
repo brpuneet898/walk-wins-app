@@ -97,6 +97,20 @@ export default function HomeScreen() {
       const initialTodaysSteps = storedData ? parseInt(storedData, 10) : 0;
       setTodaysSteps(initialTodaysSteps);
 
+      // Try getting today's steps directly from sensor
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      
+      try {
+        const todaySteps = await Pedometer.getStepCountAsync(startOfToday, new Date());
+        console.log('Steps from start of day:', todaySteps.steps);
+        if (todaySteps.steps > initialTodaysSteps) {
+          setTodaysSteps(todaySteps.steps);
+        }
+      } catch (error) {
+        console.log('Error getting today steps, using watchStepCount instead:', error);
+      }
+
       subscription = Pedometer.watchStepCount(result => {
         console.log('Step count from sensor:', result.steps);
         const currentListenerSteps = result.steps;
