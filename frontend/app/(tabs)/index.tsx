@@ -19,8 +19,9 @@ export default function HomeScreen() {
   const [todaysSteps, setTodaysSteps] = useState(0);
   const [isPedometerAvailable, setIsPedometerAvailable] = useState(false);
   const [dailyStepGoal, setDailyStepGoal] = useState(3000); // State for the daily step goal
+  const [previousSteps, setPreviousSteps] = useState(0); // Track previous steps for coin calculation
 
-  const { isLoggingOut } = useSteps();
+  const { isLoggingOut, coins, setCoins, isBoostActive, boostType } = useSteps();
   const isSyncing = useRef(false);
   const lastStepValueFromListener = useRef(0);
   const isInitialized = useRef(false);
@@ -29,7 +30,7 @@ export default function HomeScreen() {
   const handleGoalChange = async (newGoal: number) => {
     if (newGoal < 3000) newGoal = 3000; // Enforce minimum goal
     setDailyStepGoal(newGoal);
-    
+
     // Save the new goal to the user's document in Firestore
     const currentUser = auth.currentUser;
     if (currentUser) {
@@ -70,19 +71,27 @@ export default function HomeScreen() {
 
     const init = async () => {
       const isAvailable = await Pedometer.isAvailableAsync();
+      console.log('Pedometer available:', isAvailable);
       setIsPedometerAvailable(isAvailable);
-      if (!isAvailable) return;
+      if (!isAvailable) {
+        console.log('Pedometer not available on this device');
+        return;
+      }
       const { status } = await Pedometer.requestPermissionsAsync();
-      if (status !== 'granted') return;
+      console.log('Permission status:', status);
+      if (status !== 'granted') {
+        console.log('Permission not granted');
+        return;
+      }
 
       await finalizePreviousDaySteps();
-      
+
       const currentUser = auth.currentUser;
       if (currentUser) {
-          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-          if (userDoc.exists() && userDoc.data().dailyStepGoal) {
-              setDailyStepGoal(userDoc.data().dailyStepGoal);
-          }
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists() && userDoc.data().dailyStepGoal) {
+          setDailyStepGoal(userDoc.data().dailyStepGoal);
+        }
       }
 
       const todayString = getLocalDateString();
@@ -91,27 +100,45 @@ export default function HomeScreen() {
       setTodaysSteps(initialTodaysSteps);
 
       subscription = Pedometer.watchStepCount(result => {
+        console.log('Step count from sensor:', result.steps);
         const currentListenerSteps = result.steps;
         if (!isInitialized.current) {
           lastStepValueFromListener.current = currentListenerSteps;
           isInitialized.current = true;
+          console.log('Initialized with steps:', currentListenerSteps);
           return;
         }
         let incrementStep = currentListenerSteps - lastStepValueFromListener.current;
         lastStepValueFromListener.current = currentListenerSteps;
         if (incrementStep < 0) incrementStep = 0;
         if (incrementStep > 0) {
-          setTodaysSteps(prevSteps => prevSteps + incrementStep);
+          console.log('Adding steps:', incrementStep);
+          setTodaysSteps(prevSteps => {
+            const newSteps = prevSteps + incrementStep;
+            console.log('New total steps:', newSteps);
+
+            // Calculate coins earned
+            const baseRate = 0.01;
+            const currentRate = isBoostActive ? baseRate * 2 : baseRate;
+            const coinsEarned = incrementStep * currentRate;
+
+            console.log(`Boost Active: ${isBoostActive}, Boost Type: ${boostType}`);
+            console.log(`Base Rate: ${baseRate}, Current Rate: ${currentRate}`);
+            console.log(`Earned ${coinsEarned} coins (${incrementStep} steps × ${currentRate} rate)`);
+            setCoins(prevCoins => prevCoins + coinsEarned);
+
+            return newSteps;
+          });
         }
       });
-      hourlySyncInterval = setInterval(syncToFirebase, 3600000); 
+      hourlySyncInterval = setInterval(syncToFirebase, 3600000);
     };
     init();
 
     const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
-        if (nextAppState === 'background' || nextAppState === 'inactive') {
-            syncToFirebase();
-        }
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        syncToFirebase();
+      }
     });
 
     return () => {
@@ -150,22 +177,22 @@ export default function HomeScreen() {
         const stepsToFinalize = await AsyncStorage.getItem(`dailySteps_${lastSyncDate}`);
         const finalStepCount = stepsToFinalize ? parseInt(stepsToFinalize, 10) : 0;
         if (finalStepCount > 0) {
-            const dailyDocRef = doc(db, `users/${currentUser.uid}/dailySteps`, lastSyncDate);
-            const userDocRef = doc(db, 'users', currentUser.uid);
-            const dailyDocSnap = await getDoc(dailyDocRef);
-            const stepsAlreadyInDb = dailyDocSnap.exists() ? dailyDocSnap.data().steps : 0;
-            const incrementAmount = finalStepCount - stepsAlreadyInDb;
-            if(incrementAmount > 0) {
-              await setDoc(dailyDocRef, { steps: finalStepCount });
-              await updateDoc(userDocRef, { lifetimeTotalSteps: increment(incrementAmount) });
-            }
+          const dailyDocRef = doc(db, `users/${currentUser.uid}/dailySteps`, lastSyncDate);
+          const userDocRef = doc(db, 'users', currentUser.uid);
+          const dailyDocSnap = await getDoc(dailyDocRef);
+          const stepsAlreadyInDb = dailyDocSnap.exists() ? dailyDocSnap.data().steps : 0;
+          const incrementAmount = finalStepCount - stepsAlreadyInDb;
+          if (incrementAmount > 0) {
+            await setDoc(dailyDocRef, { steps: finalStepCount });
+            await updateDoc(userDocRef, { lifetimeTotalSteps: increment(incrementAmount) });
+          }
         }
       }
       await AsyncStorage.setItem('lastSyncDate', todayString);
     } catch (error) {
-        console.error("Error finalizing previous day:", error);
+      console.error("Error finalizing previous day:", error);
     } finally {
-        isSyncing.current = false;
+      isSyncing.current = false;
     }
   };
 
@@ -175,11 +202,25 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.header}>Today's Steps</Text>
+
+
+      {isBoostActive && (
+        <View style={styles.boostBanner}>
+          <Text style={styles.boostText}>
+            🌅 {boostType?.toUpperCase()} BOOST ACTIVE! 🌅
+          </Text>
+          <Text style={styles.boostSubtext}>
+            Earning 2x coins! (0.02 per step)
+          </Text>
+        </View>
+      )}
       <View style={styles.content}>
         <View style={styles.stepBox}>
           <Text style={styles.stepCount}>{formattedStepCount}</Text>
         </View>
-        
+
+
+
         <View style={styles.goalContainer}>
           <Text style={styles.goalText}>Daily Goal: {dailyStepGoal} steps</Text>
           <View style={styles.goalButtons}>
@@ -197,47 +238,128 @@ export default function HomeScreen() {
         </View>
         <Text style={styles.progressText}>{progress.toFixed(0)}% Complete</Text>
 
+        <Pressable
+          style={styles.testButton}
+          onPress={() => {
+            console.log('Manual step button pressed');
+            console.log(`Current boost status: Active=${isBoostActive}, Type=${boostType}`);
+
+            // Manually calculate coins for testing
+            const baseRate = 0.01;
+            const currentRate = isBoostActive ? baseRate * 2 : baseRate;
+            const coinsEarned = 10 * currentRate;
+
+            console.log(`Adding 10 steps with rate ${currentRate}, earning ${coinsEarned} coins`);
+            setTodaysSteps(prev => prev + 10);
+            setCoins(prevCoins => prevCoins + coinsEarned);
+          }}
+        >
+          <Text style={styles.testButtonText}>Add 10 Steps (Test)</Text>
+        </Pressable>
+
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff', paddingTop: 60, alignItems: 'center' },
-    header: { fontSize: 32, fontWeight: 'bold', marginBottom: 20 },
-    content: { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%' },
-    stepBox: { width: 200, height: 200, borderWidth: 5, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-    stepCount: { fontSize: 60, fontWeight: 'bold' },
-    goalContainer: {
-        marginTop: 30,
-        alignItems: 'center',
-    },
-    goalText: {
-        fontSize: 18,
-        color: '#333',
-    },
-    goalButtons: {
-        flexDirection: 'row',
-        marginTop: 10,
-        width: 150,
-        justifyContent: 'space-around',
-    },
-    progressBarBackground: {
-        width: '80%',
-        height: 20,
-        backgroundColor: '#eee',
-        borderRadius: 10,
-        marginTop: 20,
-        overflow: 'hidden',
-    },
-    progressBarFill: {
-        height: '100%',
-        backgroundColor: '#007AFF',
-        borderRadius: 10,
-    },
-    progressText: {
-        marginTop: 5,
-        fontSize: 14,
-        color: '#666',
-    },
+  container: { flex: 1, backgroundColor: '#fff', paddingTop: 60, alignItems: 'center' },
+  header: { fontSize: 32, fontWeight: 'bold', marginBottom: 20 },
+  content: { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%' },
+  stepBox: { width: 200, height: 200, borderWidth: 5, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  stepCount: { fontSize: 60, fontWeight: 'bold' },
+  goalContainer: {
+    marginTop: 30,
+    alignItems: 'center',
+  },
+  goalText: {
+    fontSize: 18,
+    color: '#333',
+  },
+  goalButtons: {
+    flexDirection: 'row',
+    marginTop: 10,
+    width: 150,
+    justifyContent: 'space-around',
+  },
+  progressBarBackground: {
+    width: '80%',
+    height: 20,
+    backgroundColor: '#eee',
+    borderRadius: 10,
+    marginTop: 20,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#007AFF',
+    borderRadius: 10,
+  },
+  progressText: {
+    marginTop: 5,
+    fontSize: 14,
+    color: '#666',
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#ff0000',
+    marginBottom: 5,
+  },
+  testButton: {
+    backgroundColor: '#007AFF',
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 20,
+  },
+  testButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  boostBanner: {
+    backgroundColor: '#FFD700',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FFA500',
+  },
+  boostText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FF6B00',
+    textAlign: 'center',
+  },
+  boostSubtext: {
+    fontSize: 12,
+    color: '#FF6B00',
+    marginTop: 3,
+    textAlign: 'center',
+  },
+  coinBox: {
+    backgroundColor: '#F8F9FA',
+    padding: 20,
+    borderRadius: 15,
+    marginTop: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
+  },
+  coinLabel: {
+    fontSize: 16,
+    color: '#6C757D',
+    marginBottom: 5,
+  },
+  coinCount: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#28A745',
+    marginBottom: 5,
+  },
+  coinRate: {
+    fontSize: 12,
+    color: '#6C757D',
+    textAlign: 'center',
+  },
 });
