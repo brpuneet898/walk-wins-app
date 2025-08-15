@@ -8,7 +8,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import 'react-native-reanimated';
 
 // ⭐️ 1. Import the new PushNotificationManager component
-import PushNotificationManager from '../components/PushNotificationManager';
+// import PushNotificationManager from '../components/PushNotificationManager';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -25,11 +25,7 @@ export default function RootLayout() {
     <>
       {!loaded && <Stack.Screen options={{ headerShown: false }} />}
       {/* ⭐️ 2. Wrap the entire navigation with the PushNotificationManager */}
-      {loaded && (
-        <PushNotificationManager>
-          <RootLayoutNav />
-        </PushNotificationManager>
-      )}
+      {loaded && <RootLayoutNav />}
     </>
   );
 }
