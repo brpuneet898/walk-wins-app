@@ -7,14 +7,14 @@ export default function AuthLayout() {
         name="login"
         options={{
           title: 'Login to WalkWins',
-          headerShown: true, // Make sure the header is visible
+          headerShown: false, // Make sure the header is visible
         }}
       />
       <Stack.Screen
         name="signup"
         options={{
           title: 'Create Account',
-          headerShown: true,
+          headerShown: false,
         }}
       />
     </Stack>
