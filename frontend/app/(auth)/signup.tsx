@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, Alert, ScrollView } from 'react-native';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, collection, query, where, getDocs, updateDoc, increment } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,11 +18,18 @@ export default function SignUp() {
   const [age, setAge] = useState('');
   const [gender, setGender] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [referralCode, setReferralCode] = useState(''); // For entering someone else's referral code
 
   // New state for the new fields
   const [fitnessGoal, setFitnessGoal] = useState('');
   const [occupation, setOccupation] = useState('');
   const [preferredTime, setPreferredTime] = useState('');
+
+  // Function to generate a unique referral code
+  const generateReferralCode = (username) => {
+    const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    return `${username.toUpperCase().slice(0, 4)}${randomNum}`;
+  };
 
   const router = useRouter();
 
@@ -35,6 +42,36 @@ export default function SignUp() {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
+      // Generate unique referral code for this user
+      const userReferralCode = generateReferralCode(username);
+
+      // Check if someone referred this user and give both users 10 coins
+      let referredByUser = null;
+      let initialCoins = 0;
+      
+      if (referralCode.trim()) {
+        // Find the user who owns this referral code
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('referralCode', '==', referralCode.trim().toUpperCase()));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          const referrerDoc = querySnapshot.docs[0];
+          referredByUser = referrerDoc.id;
+          initialCoins = 10; // New user gets 10 coins
+          
+          // Give 10 coins to the referrer
+          await updateDoc(referrerDoc.ref, {
+            coins: increment(10),
+            totalReferrals: increment(1)
+          });
+          
+          console.log('Referral bonus applied!');
+        } else {
+          Alert.alert('Invalid Referral Code', 'The referral code you entered is not valid.');
+        }
+      }
+
       // Add the new fields to the user's document in Firestore
       await setDoc(doc(db, 'users', user.uid), {
         email: user.email,
@@ -44,8 +81,12 @@ export default function SignUp() {
         fitnessGoal: fitnessGoal,
         occupation: occupation,
         preferredTime: preferredTime,
-        dailyStepGoal: 3000, // Set a default step goal
+        dailyStepGoal: 3000,
         totalSteps: 0,
+        coins: initialCoins, // Start with 0 or 10 coins if referred
+        referralCode: userReferralCode, // User's own referral code
+        referredBy: referredByUser, // Who referred this user (if any)
+        totalReferrals: 0, // How many people this user has referred
         createdAt: new Date(),
       });
       
@@ -86,6 +127,14 @@ export default function SignUp() {
       </View>
       <TextInput style={styles.input} placeholder="Age" placeholderTextColor="#999" value={age} onChangeText={setAge} keyboardType="numeric" />
       <TextInput style={styles.input} placeholder="Gender" placeholderTextColor="#999" value={gender} onChangeText={setGender} />
+      <TextInput 
+        style={styles.input} 
+        placeholder="Referral Code (Optional)" 
+        placeholderTextColor="#999" 
+        value={referralCode} 
+        onChangeText={setReferralCode}
+        autoCapitalize="characters"
+      />
 
       {/* New Selection Groups */}
       <SelectionGroup title="Fitness Goal" options={fitnessGoals} selected={fitnessGoal} onSelect={setFitnessGoal} />
