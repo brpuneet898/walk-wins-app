@@ -1,37 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
 import { useSteps } from '../../context/StepContext';
-import { auth, db } from '../../firebaseConfig';
-import { doc, getDoc } from 'firebase/firestore';
 
 export default function CoinScreen() {
-  // Get both lifetimeSteps and dailyRecords from our shared context
-  const { lifetimeSteps, dailyRecords } = useSteps();
-  const [referralBonus, setReferralBonus] = useState(0);
+  // Get coins (referral bonuses), lifetimeSteps and dailyRecords from context
+  const { coins, lifetimeSteps, dailyRecords } = useSteps();
   const pricePerStep = 0.01;
 
-  // Load referral bonus from Firebase
-  useEffect(() => {
-    const loadReferralBonus = async () => {
-      const user = auth.currentUser;
-      if (user) {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
-            const totalReferrals = userData.totalReferrals || 0;
-            setReferralBonus(totalReferrals * 10); // 10 coins per referral
-          }
-        } catch (error) {
-          console.error('Error loading referral bonus:', error);
-        }
-      }
-    };
-    loadReferralBonus();
-  }, []);
-
+  // Calculate total earnings: step earnings + referral bonuses
   const stepEarnings = lifetimeSteps * pricePerStep;
-  const totalEarned = stepEarnings + referralBonus;
+  const totalEarned = stepEarnings + coins;
 
   return (
     <View style={styles.container}>
