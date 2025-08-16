@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
 import { useSteps } from '../../context/StepContext';
+import { IconSymbol } from '@/components/ui/IconSymbol';
 // Make sure you have these packages installed
 import Animated, {
   useSharedValue,
@@ -109,10 +110,10 @@ const AnimatedBackground = () => {
 };
 
 export default function CoinScreen() {
-  const { coins, lifetimeSteps, dailyRecords } = useSteps();
+  const { coins = 0, lifetimeSteps = 0, dailyRecords = [] } = useSteps() as any;
   const pricePerStep = 0.01;
   const stepEarnings = lifetimeSteps * pricePerStep;
-  const totalEarned = stepEarnings + coins;
+  const totalEarned = stepEarnings + (coins || 0);
 
   return (
     <View style={styles.container}>
@@ -131,15 +132,22 @@ export default function CoinScreen() {
       <Text style={styles.historyHeader}>Daily History</Text>
 
       <FlatList
-        data={dailyRecords}
+        data={dailyRecords || []}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
-          <View style={styles.historyItem}>
-            <Text style={styles.historyDate}>{item.id}</Text>
-            <Text style={styles.historySteps}>{item.steps} steps</Text>
+          <View style={styles.card}>
+            <View style={styles.cardLeft}>
+              <Text style={styles.cardDate}>{item.id}</Text>
+              {item.time ? <Text style={styles.cardTime}>{String(item.time)}</Text> : null}
+            </View>
+            <View style={styles.cardRight}>
+              <Text style={styles.cardSteps}>{item.steps} steps</Text>
+            </View>
           </View>
         )}
+        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         ListEmptyComponent={<Text style={styles.emptyText}>No daily records yet.</Text>}
+        contentContainerStyle={{ paddingBottom: 32, paddingTop: 8 }}
       />
     </View>
   );
@@ -168,11 +176,9 @@ const styles = StyleSheet.create({
   },
   summaryBox: {
     padding: 20,
-    // --- START: Updated background color to be semi-transparent ---
-    backgroundColor: 'rgba(31, 41, 55, 0.6)', // Corresponds to bg-gray-800/50
-    // --- END: Updated background color ---
-    borderRadius: 10,
-    marginBottom: 32,
+    backgroundColor: 'rgba(31, 41, 55, 0.45)',
+    borderRadius: 20,
+    marginBottom: 24,
     alignItems: 'center',
     marginHorizontal: 15,
   },
@@ -190,11 +196,37 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   historyHeader: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 10,
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 12,
     color: '#FFFFFF',
+    marginHorizontal: 8,
   },
+
+  /* NEW: Card styles for each daily entry */
+  card: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(31, 41, 55, 0.45)',
+    borderRadius: 12,
+    padding: 14,
+    marginHorizontal: 15,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    shadowColor: 'rgba(31, 41, 55, 0.45)',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  cardLeft: { flex: 1, paddingRight: 8 },
+  cardDate: { fontSize: 16, color: '#E5E7EB', fontWeight: '600' },
+  cardTime: { color: '#9CA3AF', fontSize: 12, marginTop: 4},
+
+  cardRight: { alignItems: 'flex-end', minWidth: 110 },
+  cardSteps: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginTop: 4 },
+
   historyItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
