@@ -1,11 +1,11 @@
 import { Tabs } from 'expo-router';
 import React, { useEffect, ReactNode } from 'react';
-import { Platform } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
+// Make sure you have this package installed by running: npx expo install expo-blur
+import { BlurView } from 'expo-blur';
 
 import { HapticTab } from '@/components/HapticTab';
 import { IconSymbol } from '@/components/ui/IconSymbol';
-import TabBarBackground from '@/components/ui/TabBarBackground';
-import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { StepProvider, useSteps } from '../../context/StepContext';
 import { auth, db } from '../../firebaseConfig';
@@ -42,7 +42,6 @@ const AppDataController = ({ children }: { children: ReactNode }) => {
         
         // Fetch global leaderboard data
         const todayString = getLocalDateString();
-        // ⭐️ FIX: The query is changed here. We remove the 'where' clause.
         const leaderboardQuery = query(
           collectionGroup(db, 'dailySteps'),
           orderBy('steps', 'desc'),
@@ -50,7 +49,6 @@ const AppDataController = ({ children }: { children: ReactNode }) => {
         );
         const leaderboardSnapshot = await getDocs(leaderboardQuery);
 
-        // We filter for today's date here, in the app's code, instead of in the query.
         const todaysEntries = leaderboardSnapshot.docs.filter(doc => doc.id === todayString);
         
         const leaderboardPromises = todaysEntries.map(async (dailyDoc, index) => {
@@ -68,7 +66,6 @@ const AppDataController = ({ children }: { children: ReactNode }) => {
         console.log("[Data Controller] Data fetch complete.");
 
       } catch (error) {
-        // This will now catch the new "index required" error
         console.error('[Data Controller] Error fetching data:', error);
       }
     };
@@ -89,11 +86,43 @@ export default function TabLayout() {
       <AppDataController>
         <Tabs
           screenOptions={{
-            tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+            tabBarActiveTintColor: '#FFFFFF',
+            tabBarInactiveTintColor: '#6c7584',
             headerShown: false,
             tabBarButton: HapticTab,
-            tabBarBackground: TabBarBackground,
-            tabBarStyle: Platform.select({ ios: { position: 'absolute' }, default: {} }),
+            tabBarBackground: () => (
+              <View style={styles.tabBarBackgroundContainer}>
+                <BlurView tint="dark" intensity={80} style={StyleSheet.absoluteFill} />
+              </View>
+            ),
+            // --- START: Updated Tab Bar Styles for 3D Effect ---
+            tabBarStyle: {
+              position: 'absolute',
+              bottom: 0,
+              left: 20,
+              right: 20,
+              height: 80,
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              backgroundColor: '#1d2635',
+              
+              // Shine effect on the top edge
+              borderTopWidth: 2,
+              borderTopColor: '#384150',
+              
+              // Shadow for the 3D floating effect (iOS)
+              shadowColor: '#ffffffff',
+              shadowOffset: {
+                width: 0,
+                height: -5, // Casts shadow upwards
+              },
+              shadowOpacity: 0.5,
+              shadowRadius: 10,
+
+              // Elevation for Android shadow (subtler effect)
+              elevation: 10,
+            },
+            // --- END: Updated Tab Bar Styles ---
           }}>
           <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} /> }} />
           <Tabs.Screen name="coin" options={{ title: 'Coins', tabBarIcon: ({ color }) => <IconSymbol size={28} name="indianrupeesign.circle.fill" color={color} /> }} />
@@ -104,3 +133,12 @@ export default function TabLayout() {
     </StepProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBarBackgroundContainer: {
+    ...StyleSheet.absoluteFillObject,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
+});
