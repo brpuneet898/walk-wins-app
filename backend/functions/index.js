@@ -109,6 +109,15 @@ exports.sendPersonalizedNotifications = functions.pubsub
     return null;
   });
 
+exports.saveTrail = functions.https.onCall(async (data, context) => {
+  const { userId, trail } = data;
+  if (!userId || !trail) {
+    throw new functions.https.HttpsError('invalid-argument', 'User ID and trail are required');
+  }
+
+  await admin.firestore().collection('trails').doc(userId).set({ trail });
+  return { success: true };
+});
 
 // Helper function to call the Gemini API
 async function generateNotification(prompt) {
