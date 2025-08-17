@@ -1,12 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, Pressable, AppState } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, AppState } from 'react-native';
 import { Pedometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../../firebaseConfig';
 import { doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
 import { useSteps } from '../../context/StepContext';
 import { FontAwesome } from '@expo/vector-icons';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
+import { Svg, Circle } from 'react-native-svg';
 
 const getLocalDateString = (date = new Date()) => {
   const year = date.getFullYear();
@@ -15,25 +22,108 @@ const getLocalDateString = (date = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
+const AnimatedBackground = () => {
+  const scale1 = useSharedValue(1);
+  const scale2 = useSharedValue(1);
+  const opacity1 = useSharedValue(0.6);
+  const opacity2 = useSharedValue(0.6);
+
+  React.useEffect(() => {
+    scale1.value = withRepeat(
+      withTiming(1.2, { duration: 2500, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }),
+      -1,
+      true
+    );
+    scale2.value = withRepeat(
+      withTiming(1.2, { duration: 3000, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }),
+      -1,
+      true
+    );
+    opacity1.value = withRepeat(
+      withTiming(1, { duration: 2500, easing: Easing.bezier(0.42, 0, 0.58, 1) }),
+      -1,
+      true
+    );
+    opacity2.value = withRepeat(
+      withTiming(1, { duration: 3000, easing: Easing.bezier(0.42, 0, 0.58, 1) }),
+      -1,
+      true
+    );
+  }, []);
+
+  const animatedStyle1 = useAnimatedStyle(() => ({
+    transform: [{ scale: scale1.value }],
+    opacity: opacity1.value,
+  }));
+
+  const animatedStyle2 = useAnimatedStyle(() => ({
+    transform: [{ scale: scale2.value }],
+    opacity: opacity2.value,
+  }));
+
+  const layers = Array.from({ length: 48 });
+
+  return (
+    <View style={styles.backgroundContainer} pointerEvents="none">
+      <Animated.View style={[styles.circleContainer, { top: -160, left: -160, width: 360, height: 360 }, animatedStyle1]}>
+        {layers.map((_, i) => (
+          <View
+            key={`c1-${i}`}
+            style={{
+              position: 'absolute',
+              top: i * 1.2,
+              left: i * 1.2,
+              width: 340 - i * 3,
+              height: 340 - i * 3,
+              borderRadius: (340 - i * 3) / 2,
+              backgroundColor: '#3B82F6',
+              opacity: 0.004 + (i * 0.0009),
+            }}
+          />
+        ))}
+      </Animated.View>
+
+      <Animated.View style={[styles.circleContainer, { bottom: -180, right: -180, width: 380, height: 380 }, animatedStyle2]}>
+        {layers.map((_, i) => (
+          <View
+            key={`c2-${i}`}
+            style={{
+              position: 'absolute',
+              top: i * 1.2,
+              left: i * 1.2,
+              width: 360 - i * 3,
+              height: 360 - i * 3,
+              borderRadius: (360 - i * 3) / 2,
+              backgroundColor: '#22D3EE',
+              opacity: 0.004 + (i * 0.0009),
+            }}
+          />
+        ))}
+      </Animated.View>
+    </View>
+  );
+};
+
 export default function HomeScreen() {
   const [todaysSteps, setTodaysSteps] = useState(0);
   const [isPedometerAvailable, setIsPedometerAvailable] = useState(false);
-  const [dailyStepGoal, setDailyStepGoal] = useState(3000); // State for the daily step goal
+  const [dailyStepGoal, setDailyStepGoal] = useState(3000);
   const { isLoggingOut, isBoostActive, boostType } = useSteps();
   const isSyncing = useRef(false);
   const lastStepValueFromListener = useRef(0);
   const isInitialized = useRef(false);
 
-  // Function to handle changes to the step goal
   const handleGoalChange = async (newGoal: number) => {
-    if (newGoal < 3000) newGoal = 3000; // Enforce minimum goal
+    if (newGoal < 3000) newGoal = 3000;
     setDailyStepGoal(newGoal);
-
-    // Save the new goal to the user's document in Firestore
     const currentUser = auth.currentUser;
     if (currentUser) {
       const userDocRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(userDocRef, { dailyStepGoal: newGoal });
+      try {
+        await updateDoc(userDocRef, { dailyStepGoal: newGoal });
+      } catch (err) {
+        // ignore update errors silently
+      }
     }
   };
 
@@ -57,7 +147,7 @@ export default function HomeScreen() {
         await updateDoc(userDocRef, { lifetimeTotalSteps: increment(incrementAmount) });
       }
     } catch (error) {
-      console.error("[SYNC] Error:", error);
+      console.error('[SYNC] Error:', error);
     } finally {
       isSyncing.current = false;
     }
@@ -69,18 +159,10 @@ export default function HomeScreen() {
 
     const init = async () => {
       const isAvailable = await Pedometer.isAvailableAsync();
-      console.log('Pedometer available:', isAvailable);
       setIsPedometerAvailable(isAvailable);
-      if (!isAvailable) {
-        console.log('Pedometer not available on this device');
-        return;
-      }
+      if (!isAvailable) return;
       const { status } = await Pedometer.requestPermissionsAsync();
-      console.log('Permission status:', status);
-      if (status !== 'granted') {
-        console.log('Permission not granted');
-        return;
-      }
+      if (status !== 'granted') return;
 
       await finalizePreviousDaySteps();
 
@@ -97,42 +179,29 @@ export default function HomeScreen() {
       const initialTodaysSteps = storedData ? parseInt(storedData, 10) : 0;
       setTodaysSteps(initialTodaysSteps);
 
-      // Try getting today's steps directly from sensor
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
-      
       try {
         const todaySteps = await Pedometer.getStepCountAsync(startOfToday, new Date());
-        console.log('Steps from start of day:', todaySteps.steps);
         if (todaySteps.steps > initialTodaysSteps) {
           setTodaysSteps(todaySteps.steps);
         }
       } catch (error) {
-        console.log('Error getting today steps, using watchStepCount instead:', error);
+        // fallback to watchStepCount
       }
 
       subscription = Pedometer.watchStepCount(result => {
-        console.log('Step count from sensor:', result.steps);
         const currentListenerSteps = result.steps;
         if (!isInitialized.current) {
           lastStepValueFromListener.current = currentListenerSteps;
           isInitialized.current = true;
-          console.log('Initialized with steps:', currentListenerSteps);
           return;
         }
         let incrementStep = currentListenerSteps - lastStepValueFromListener.current;
         lastStepValueFromListener.current = currentListenerSteps;
         if (incrementStep < 0) incrementStep = 0;
         if (incrementStep > 0) {
-          console.log('Adding steps:', incrementStep);
-          setTodaysSteps(prevSteps => {
-            const newSteps = prevSteps + incrementStep;
-            console.log('New total steps:', newSteps);
-
-
-
-            return newSteps;
-          });
+          setTodaysSteps(prevSteps => prevSteps + incrementStep);
         }
       });
       hourlySyncInterval = setInterval(syncToFirebase, 3600000);
@@ -194,7 +263,7 @@ export default function HomeScreen() {
       }
       await AsyncStorage.setItem('lastSyncDate', todayString);
     } catch (error) {
-      console.error("Error finalizing previous day:", error);
+      console.error('Error finalizing previous day:', error);
     } finally {
       isSyncing.current = false;
     }
@@ -204,26 +273,43 @@ export default function HomeScreen() {
   const formattedStepCount = String(todaysSteps).padStart(4, '0');
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Today's Steps</Text>
-
+    <View style={styles.page}>
+      <AnimatedBackground />
+      <View style={styles.headerContainer}>
+        <Text style={styles.headerTitle}>Today's Steps</Text>
+      </View>
 
       {isBoostActive && (
-        <View style={styles.boostBanner}>
-          <Text style={styles.boostText}>
-            🌅 {boostType?.toUpperCase()} BOOST ACTIVE! 🌅
-          </Text>
-          <Text style={styles.boostSubtext}>
-            Earning 2x coins! (0.02 per step)
-          </Text>
+        <View style={styles.boostCard}>
+          <Text style={styles.boostTitle}>🌅 {boostType?.toUpperCase()} BOOST ACTIVE!</Text>
+          <Text style={styles.boostSubtitle}>Earning 2x coins! (0.02 per step)</Text>
         </View>
       )}
-      <View style={styles.content}>
+
+      <View style={styles.centerArea}>
         <View style={styles.stepBox}>
-          <Text style={styles.stepCount}>{formattedStepCount}</Text>
+          {/* Progress ring circle */}
+          <Svg width={220} height={220} viewBox="0 0 220 220">
+            <Circle cx="110" cy="110" r="95" stroke="rgba(255,255,255,0.06)" strokeWidth="10" fill="rgba(31,41,55,0.18)" />
+            <Circle
+              cx="110"
+              cy="110"
+              r="95"
+              stroke="#00C6FF"
+              strokeWidth="10"
+              strokeLinecap="round"
+              strokeDasharray={`${2 * Math.PI * 95}`}
+              strokeDashoffset={`${(1 - progress / 100) * (2 * Math.PI * 95)}`}
+              rotation="-90"
+              origin="110, 110"
+            />
+            <Text />
+          </Svg>
+
+          <View style={styles.stepInner}>
+            <Text style={styles.stepCount}>{formattedStepCount}</Text>
+          </View>
         </View>
-
-
 
         <View style={styles.goalContainer}>
           <Text style={styles.goalText}>Daily Goal: {dailyStepGoal} steps</Text>
@@ -241,35 +327,71 @@ export default function HomeScreen() {
           <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
         </View>
         <Text style={styles.progressText}>{progress.toFixed(0)}% Complete</Text>
-
-        <Pressable
-          style={styles.testButton}
-          onPress={() => {
-            console.log('Manual step button pressed');
-            setTodaysSteps(prev => prev + 10);
-          }}
-        >
-          <Text style={styles.testButtonText}>Add 10 Steps (Test)</Text>
-        </Pressable>
-
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingTop: 60, alignItems: 'center' },
-  header: { fontSize: 32, fontWeight: 'bold', marginBottom: 20 },
-  content: { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%' },
-  stepBox: { width: 200, height: 200, borderWidth: 5, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  stepCount: { fontSize: 60, fontWeight: 'bold' },
+  page: {
+    flex: 1,
+    backgroundColor: '#111827',
+  },
+  backgroundContainer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  circleContainer: {
+    position: 'absolute',
+  },
+
+  headerContainer: {
+    paddingTop: 40, // moved down
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 24, // match coin header
+    fontWeight: '700',
+  },
+
+  boostCard: {
+    backgroundColor: 'rgba(31,41,55,0.45)',
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  boostTitle: { color: '#fff', fontWeight: '700' },
+  boostSubtitle: { color: '#cbd5e1', fontSize: 12, marginTop: 4 },
+
+  centerArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  stepBox: {
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 18,
+    // background kept subtle to match overall aesthetic
+    backgroundColor: 'transparent',
+  },
+  stepInner: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepCount: { fontSize: 48, fontWeight: 'bold', color: '#fff' },
+
   goalContainer: {
-    marginTop: 30,
+    marginTop: 10,
     alignItems: 'center',
   },
   goalText: {
-    fontSize: 18,
-    color: '#333',
+    fontSize: 16,
+    color: '#9CA3AF',
   },
   goalButtons: {
     flexDirection: 'row',
@@ -277,40 +399,31 @@ const styles = StyleSheet.create({
     width: 150,
     justifyContent: 'space-around',
   },
+
   progressBarBackground: {
     width: '80%',
-    height: 20,
-    backgroundColor: '#eee',
+    height: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: 10,
     marginTop: 20,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#007AFF',
+    backgroundColor: '#00C6FF',
     borderRadius: 10,
   },
   progressText: {
-    marginTop: 5,
+    marginTop: 8,
     fontSize: 14,
-    color: '#666',
+    color: '#9CA3AF',
   },
-  debugText: {
-    fontSize: 12,
-    color: '#ff0000',
-    marginBottom: 5,
-  },
-  testButton: {
-    backgroundColor: '#007AFF',
-    padding: 15,
-    borderRadius: 10,
-    marginTop: 20,
-  },
-  testButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+
+  // legacy / fallback styles (kept for safety)
+  container: { flex: 1, backgroundColor: '#fff', paddingTop: 60, alignItems: 'center' },
+  header: { fontSize: 32, fontWeight: 'bold', marginBottom: 20 },
+  content: { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%' },
+
   boostBanner: {
     backgroundColor: '#FFD700',
     padding: 10,
@@ -332,29 +445,17 @@ const styles = StyleSheet.create({
     marginTop: 3,
     textAlign: 'center',
   },
-  coinBox: {
-    backgroundColor: '#F8F9FA',
-    padding: 20,
-    borderRadius: 15,
+
+  // debug / test styles left intentionally (not used)
+  testButton: {
+    backgroundColor: '#007AFF',
+    padding: 15,
+    borderRadius: 10,
     marginTop: 20,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E9ECEF',
   },
-  coinLabel: {
+  testButtonText: {
+    color: 'white',
     fontSize: 16,
-    color: '#6C757D',
-    marginBottom: 5,
-  },
-  coinCount: {
-    fontSize: 24,
     fontWeight: 'bold',
-    color: '#28A745',
-    marginBottom: 5,
-  },
-  coinRate: {
-    fontSize: 12,
-    color: '#6C757D',
-    textAlign: 'center',
   },
 });

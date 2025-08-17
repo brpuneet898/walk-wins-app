@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
-import { useSteps } from '../../context/StepContext';
+import { useSteps, checkBoostTime } from '../../context/StepContext';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 // Make sure you have these packages installed
 import Animated, {
