@@ -1,8 +1,6 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList } from 'react-native';
-import { useSteps, checkBoostTime } from '../../context/StepContext';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-// Make sure you have these packages installed
+import { View, Text, StyleSheet } from 'react-native';
+import { useSteps } from '../../context/StepContext';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -14,7 +12,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 
 // --- START: GradientText Component ---
-// This component applies a gradient to any text passed to it.
 const GradientText = (props) => (
   <MaskedView maskElement={<Text {...props} />}>
     <LinearGradient
@@ -110,7 +107,7 @@ const AnimatedBackground = () => {
 };
 
 export default function CoinScreen() {
-  const { coins = 0, lifetimeSteps = 0, dailyRecords = [] } = useSteps() as any;
+  const { coins = 0, lifetimeSteps = 0 } = useSteps() as any;
   const pricePerStep = 0.01;
   const stepEarnings = lifetimeSteps * pricePerStep;
   const totalEarned = stepEarnings + (coins || 0);
@@ -129,26 +126,20 @@ export default function CoinScreen() {
         <Text style={styles.lifetimeStepsText}>Based on {lifetimeSteps} lifetime steps</Text>
       </View>
 
-      <Text style={styles.historyHeader}>Daily History</Text>
-
-      <FlatList
-        data={dailyRecords || []}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <View style={styles.cardLeft}>
-              <Text style={styles.cardDate}>{item.id}</Text>
-              {item.time ? <Text style={styles.cardTime}>{String(item.time)}</Text> : null}
-            </View>
-            <View style={styles.cardRight}>
-              <Text style={styles.cardSteps}>{item.steps} steps</Text>
-            </View>
-          </View>
-        )}
-        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-        ListEmptyComponent={<Text style={styles.emptyText}>No daily records yet.</Text>}
-        contentContainerStyle={{ paddingBottom: 32, paddingTop: 8 }}
-      />
+      <View style={styles.infoContainer}>
+        <LinearGradient
+          colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
+          style={styles.infoBox}
+        >
+          <Text style={styles.infoTitle}>How Earnings Work</Text>
+          <Text style={styles.infoText}>
+            • You earn ₹0.01 per step walked{'\n'}
+            • Daily step tracking adds to lifetime total{'\n'}
+            • Referral bonuses boost your earnings{'\n'}
+            • Check your daily history in Profile tab
+          </Text>
+        </LinearGradient>
+      </View>
     </View>
   );
 }
@@ -195,57 +186,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
   },
-  historyHeader: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 12,
-    color: '#FFFFFF',
-    marginHorizontal: 8,
-  },
-
-  /* NEW: Card styles for each daily entry */
-  card: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(31, 41, 55, 0.45)',
-    borderRadius: 12,
-    padding: 14,
+  infoContainer: {
     marginHorizontal: 15,
-    borderWidth: 1,
-    borderColor: '#1f2937',
-    shadowColor: 'rgba(31, 41, 55, 0.45)',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  cardLeft: { flex: 1, paddingRight: 8 },
-  cardDate: { fontSize: 16, color: '#E5E7EB', fontWeight: '600' },
-  cardTime: { color: '#9CA3AF', fontSize: 12, marginTop: 4},
-
-  cardRight: { alignItems: 'flex-end', minWidth: 110 },
-  cardSteps: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginTop: 4 },
-
-  historyItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#374151',
-  },
-  historyDate: {
-    fontSize: 16,
-    color: '#D1D5DB',
-  },
-  historySteps: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  emptyText: {
-    textAlign: 'center',
     marginTop: 20,
+  },
+  infoBox: {
+    padding: 25,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  infoText: {
+    fontSize: 14,
     color: '#9CA3AF',
-  }
+    lineHeight: 22,
+  },
 });
