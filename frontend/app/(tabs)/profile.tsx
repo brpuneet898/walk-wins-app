@@ -12,6 +12,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import Slider from '@react-native-community/slider';
+import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 
 export default function ProfileScreen() {
   const { setIsLoggingOut, dailyRecords = [] } = useSteps();
@@ -21,6 +22,57 @@ export default function ProfileScreen() {
   const [sliderValue, setSliderValue] = useState(3000);
 
   const buttonScale = useSharedValue(1);
+
+  // 👈 ADD: Function to get user initial
+  const getUserInitial = () => {
+    if (userProfile?.username) {
+      // Get first letter of username
+      return userProfile.username.charAt(0).toUpperCase();
+    } else if (user?.email) {
+      // Fallback to first letter of email
+      return user.email.charAt(0).toUpperCase();
+    }
+    // Fallback to generic icon if no data
+    return null;
+  };
+
+  // 👈 ADD: Function to get colors based on initial
+  const getAvatarColors = () => {
+    const initial = getUserInitial();
+    if (!initial) return { background: 'rgba(139,195,74,0.2)', border: '#8BC34A', text: '#8BC34A' };
+    
+    // Different color schemes for each letter
+    const colorMap = {
+      'A': { background: 'rgba(255,107,107,0.2)', border: '#FF6B6B', text: '#FF6B6B' },
+      'B': { background: 'rgba(78,205,196,0.2)', border: '#4ECDC4', text: '#4ECDC4' },
+      'C': { background: 'rgba(69,183,209,0.2)', border: '#45B7D1', text: '#45B7D1' },
+      'D': { background: 'rgba(150,206,180,0.2)', border: '#96CEB4', text: '#96CEB4' },
+      'E': { background: 'rgba(254,202,87,0.2)', border: '#FECA57', text: '#FECA57' },
+      'F': { background: 'rgba(255,159,67,0.2)', border: '#FF9F43', text: '#FF9F43' },
+      'G': { background: 'rgba(162,155,254,0.2)', border: '#A29BFE', text: '#A29BFE' },
+      'H': { background: 'rgba(253,121,168,0.2)', border: '#FD79A8', text: '#FD79A8' },
+      'I': { background: 'rgba(116,185,255,0.2)', border: '#74B9FF', text: '#74B9FF' },
+      'J': { background: 'rgba(85,239,196,0.2)', border: '#55EFC4', text: '#55EFC4' },
+      'K': { background: 'rgba(255,184,184,0.2)', border: '#FFB8B8', text: '#FFB8B8' },
+      'L': { background: 'rgba(206,214,224,0.2)', border: '#CED6E0', text: '#CED6E0' },
+      'M': { background: 'rgba(255,121,121,0.2)', border: '#FF7979', text: '#FF7979' },
+      'N': { background: 'rgba(116,125,140,0.2)', border: '#747D8C', text: '#747D8C' },
+      'O': { background: 'rgba(255,168,1,0.2)', border: '#FFA801', text: '#FFA801' },
+      'P': { background: 'rgba(60,99,130,0.2)', border: '#3C6382', text: '#3C6382' },
+      'Q': { background: 'rgba(113,88,226,0.2)', border: '#7158E2', text: '#7158E2' },
+      'R': { background: 'rgba(255,71,87,0.2)', border: '#FF4757', text: '#FF4757' },
+      'S': { background: 'rgba(46,213,115,0.2)', border: '#2ED573', text: '#2ED573' },
+      'T': { background: 'rgba(255,212,59,0.2)', border: '#FFD43B', text: '#FFD43B' },
+      'U': { background: 'rgba(106,137,204,0.2)', border: '#6A89CC', text: '#6A89CC' },
+      'V': { background: 'rgba(255,159,243,0.2)', border: '#FF9FF3', text: '#FF9FF3' },
+      'W': { background: 'rgba(87,101,116,0.2)', border: '#576574', text: '#576574' },
+      'X': { background: 'rgba(223,228,234,0.2)', border: '#DFE4EA', text: '#DFE4EA' },
+      'Y': { background: 'rgba(255,195,18,0.2)', border: '#FFC312', text: '#FFC312' },
+      'Z': { background: 'rgba(196,69,105,0.2)', border: '#C44569', text: '#C44569' },
+    };
+    
+    return colorMap[initial] || { background: 'rgba(139,195,74,0.2)', border: '#8BC34A', text: '#8BC34A' };
+  };
 
   useEffect(() => {
     const fetchUserProfile = async () => {
@@ -108,6 +160,9 @@ export default function ProfileScreen() {
     transform: [{ scale: buttonScale.value }],
   }));
 
+  // 👈 ADD: Get dynamic avatar colors
+  const avatarColors = getAvatarColors();
+
   return (
     <LinearGradient
       colors={['#0D1B2A', '#1B263B', '#415A77']}
@@ -130,8 +185,21 @@ export default function ProfileScreen() {
             style={styles.profileCardGradient}
           >
             <View style={styles.avatarContainer}>
-              <View style={styles.avatar}>
-                <FontAwesome name="user" size={32} color="#8BC34A" />
+              <View style={[
+                styles.avatar, 
+                { 
+                  backgroundColor: avatarColors.background, 
+                  borderColor: avatarColors.border 
+                }
+              ]}>
+                {/* 👈 CHANGED: Show initial or fallback icon */}
+                {getUserInitial() ? (
+                  <Text style={[styles.avatarInitial, { color: avatarColors.text }]}>
+                    {getUserInitial()}
+                  </Text>
+                ) : (
+                  <FontAwesome name="user" size={32} color="#8BC34A" />
+                )}
               </View>
             </View>
             
@@ -244,31 +312,31 @@ export default function ProfileScreen() {
             <View style={styles.historyContainer}>
               {dailyRecords && dailyRecords.length > 0 ? (
                 <>
-                  <FlatList
-                    data={dailyRecords}
-                    keyExtractor={item => item.id}
-                    showsVerticalScrollIndicator={true}
+                  <ScrollView
                     style={styles.historyList}
                     contentContainerStyle={styles.historyListContent}
+                    showsVerticalScrollIndicator={true}
                     nestedScrollEnabled={true}
-                    scrollEnabled={true}
                     bounces={false}
-                    renderItem={({ item }) => (
-                      <View style={styles.historyCard}>
-                        <View style={styles.historyCardLeft}>
-                          <Text style={styles.historyCardDate}>{item.id}</Text>
-                          {item.time ? (
-                            <Text style={styles.historyCardTime}>{String(item.time)}</Text>
-                          ) : null}
+                  >
+                    {dailyRecords.slice().map((item, index) => (
+                      <View key={item.id}>
+                        <View style={styles.historyCard}>
+                          <View style={styles.historyCardLeft}>
+                            <Text style={styles.historyCardDate}>{item.id}</Text>
+                            {item.time ? (
+                              <Text style={styles.historyCardTime}>{String(item.time)}</Text>
+                            ) : null}
+                          </View>
+                          <View style={styles.historyCardRight}>
+                            <Text style={styles.historyCardSteps}>{item.steps}</Text>
+                            <Text style={styles.historyCardStepsLabel}>steps</Text>
+                          </View>
                         </View>
-                        <View style={styles.historyCardRight}>
-                          <Text style={styles.historyCardSteps}>{item.steps}</Text>
-                          <Text style={styles.historyCardStepsLabel}>steps</Text>
-                        </View>
+                        {index < dailyRecords.length - 1 && <View style={styles.historySeparator} />}
                       </View>
-                    )}
-                    ItemSeparatorComponent={() => <View style={styles.historySeparator} />}
-                  />
+                    ))}
+                  </ScrollView>
                   
                   {dailyRecords.length > 3 && (
                     <View style={styles.scrollIndicator}>
@@ -415,11 +483,15 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(139,195,74,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: '#8BC34A',
+  },
+  // 👈 ADD: New style for the initial text
+  avatarInitial: {
+    fontSize: 32, // Same size as the original icon
+    fontWeight: '900',
+    textAlign: 'center',
   },
   profileInfo: {
     alignItems: 'center',
@@ -526,8 +598,10 @@ const styles = StyleSheet.create({
   },
   presetGoalsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    alignItems: 'center',
     width: '100%',
+    gap: 10,
   },
   presetGoalButton: {
     width: 70,
@@ -535,7 +609,6 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 5,
   },
   presetGoalText: {
     fontSize: 16,

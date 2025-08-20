@@ -20,7 +20,8 @@ const MAPPING = {
   'chevron.right': 'chevron-right',
   'indianrupeesign.circle.fill': 'currency-rupee',
   'person.fill': 'person',
-  'trophy.fill': 'emoji-events'
+  'trophy.fill': 'emoji-events',
+  'map.fill': 'map'
 } as IconMapping;
 
 /**

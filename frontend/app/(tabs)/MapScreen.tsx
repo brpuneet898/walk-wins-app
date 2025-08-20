@@ -5,6 +5,7 @@ import * as Location from 'expo-location';
 
 export default function MapScreen() {
   const [ready, setReady] = useState(false);
+  const [isTracking, setIsTracking] = useState(false); // 👈 ADD: Tracking state
   const webRef = useRef<WebView | null>(null);
   const queueRef = useRef<string[]>([]);
   const subscriptionRef = useRef<Location.LocationSubscription | null>(null);
@@ -24,6 +25,7 @@ export default function MapScreen() {
           const msg = JSON.stringify({
             type: 'location',
             coords: { lat: loc.coords.latitude, lng: loc.coords.longitude },
+            tracking: isTracking, // 👈 ADD: Include tracking state
           });
 
           if (ready) {
@@ -39,7 +41,7 @@ export default function MapScreen() {
       if (subscriptionRef.current) subscriptionRef.current.remove();
       queueRef.current = [];
     };
-  }, [ready]);
+  }, [ready, isTracking]); // 👈 ADD: isTracking dependency
 
   // send a locate message (centers map). queued if webview not ready.
   const sendLocate = async (lat?: number, lng?: number) => {
@@ -57,6 +59,27 @@ export default function MapScreen() {
       }
     } catch (err) {
       console.error('sendLocate error', err);
+    }
+  };
+
+  // 👈 ADD: Function to toggle tracking
+  const toggleTracking = () => {
+    if (isTracking) {
+      // Stop tracking
+      setIsTracking(false);
+      // Send stop message to webview
+      const msg = JSON.stringify({ type: 'stopTracking' });
+      if (ready) {
+        webRef.current?.postMessage(msg);
+      }
+    } else {
+      // Start tracking
+      setIsTracking(true);
+      // Send start message to webview
+      const msg = JSON.stringify({ type: 'startTracking' });
+      if (ready) {
+        webRef.current?.postMessage(msg);
+      }
     }
   };
 
@@ -78,14 +101,26 @@ export default function MapScreen() {
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
-      let poly = L.polyline([], { color: 'blue', weight: 4 }).addTo(map);
+      let poly = L.polyline([], { color: '#8BC34A', weight: 4 }).addTo(map);
       let marker = null;
+      let isTrackingActive = false; // 👈 ADD: Tracking state in webview
 
-      function handleLocation(lat, lng) {
+      function handleLocation(lat, lng, tracking) {
         const latlng = [lat, lng];
-        poly.addLatLng(latlng);
+        
+        // 👈 ADD: Only add to trail if tracking is active
+        if (tracking && isTrackingActive) {
+          poly.addLatLng(latlng);
+        }
+        
+        // Always update marker position
         if (!marker) {
-          marker = L.circleMarker(latlng, { radius:8, color: '#007aff', fillColor:'#007aff', fillOpacity:1 }).addTo(map);
+          marker = L.circleMarker(latlng, { 
+            radius: 8, 
+            color: '#64B5F6', 
+            fillColor: '#64B5F6', 
+            fillOpacity: 1 
+          }).addTo(map);
         } else {
           marker.setLatLng(latlng);
         }
@@ -96,8 +131,9 @@ export default function MapScreen() {
           const raw = e && e.data ? e.data : e;
           const data = JSON.parse(raw);
           if (!data) return;
+          
           if (data.type === 'location' && data.coords) {
-            handleLocation(data.coords.lat, data.coords.lng);
+            handleLocation(data.coords.lat, data.coords.lng, data.tracking);
             // only recenter automatically if map wasn't explicitly centered yet
             if (!window.__explicitlyCentered) {
               map.setView([data.coords.lat, data.coords.lng]);
@@ -106,7 +142,15 @@ export default function MapScreen() {
             // mark that user explicitly centered
             window.__explicitlyCentered = true;
             map.setView([data.coords.lat, data.coords.lng], 17);
-            handleLocation(data.coords.lat, data.coords.lng);
+            handleLocation(data.coords.lat, data.coords.lng, false);
+          } else if (data.type === 'startTracking') {
+            // 👈 ADD: Start tracking handler
+            isTrackingActive = true;
+            // Clear previous trail
+            poly.setLatLngs([]);
+          } else if (data.type === 'stopTracking') {
+            // 👈 ADD: Stop tracking handler
+            isTrackingActive = false;
           }
         } catch (err) {
           // ignore
@@ -172,6 +216,20 @@ export default function MapScreen() {
         }}
       />
 
+      {/* 👈 ADD: Start/Stop Tracking Button */}
+      <TouchableOpacity
+        style={[
+          styles.trackingButton,
+          { backgroundColor: isTracking ? '#FF4757' : '#8BC34A' }
+        ]}
+        onPress={toggleTracking}
+      >
+        <Text style={styles.trackingText}>
+          {isTracking ? 'E' : 'S'}
+        </Text>
+      </TouchableOpacity>
+
+      {/* Existing Locator Button */}
       <TouchableOpacity
         style={styles.locatorButton}
         onPress={() => {
@@ -191,6 +249,30 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   web: { flex: 1, backgroundColor: 'transparent' },
   loadingText: { position: 'absolute', top: 12, alignSelf: 'center', color: '#888' },
+  
+  // 👈 ADD: Start/Stop Tracking Button Style
+  trackingButton: {
+    position: 'absolute',
+    left: 18,
+    bottom: 110,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  trackingText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  
+  // Existing Locator Button (positioned on right)
   locatorButton: {
     position: 'absolute',
     right: 18,
