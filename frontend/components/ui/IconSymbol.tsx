@@ -20,7 +20,8 @@ const MAPPING = {
   'person.fill': 'person',
   'trophy.fill': 'emoji-events',
   'map.fill': 'map',
-  'person.2.fill': 'people'
+  'person.2.fill': 'people',
+  'gift': 'card-giftcard'
 } as IconMapping;
 
 /**

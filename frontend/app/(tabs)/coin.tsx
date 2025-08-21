@@ -28,27 +28,27 @@ const GradientText = (props) => (
 const AnimatedBackground = () => {
   const scale1 = useSharedValue(1);
   const scale2 = useSharedValue(1);
-  const opacity1 = useSharedValue(0.6);
-  const opacity2 = useSharedValue(0.6);
+  const opacity1 = useSharedValue(0.3);
+  const opacity2 = useSharedValue(0.3);
 
   useEffect(() => {
     scale1.value = withRepeat(
-      withTiming(1.2, { duration: 2500, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }),
+      withTiming(1.1, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
     scale2.value = withRepeat(
-      withTiming(1.2, { duration: 3000, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }),
+      withTiming(1.1, { duration: 4000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
     opacity1.value = withRepeat(
-      withTiming(1, { duration: 2500, easing: Easing.bezier(0.42, 0, 0.58, 1) }),
+      withTiming(0.6, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
     opacity2.value = withRepeat(
-      withTiming(1, { duration: 3000, easing: Easing.bezier(0.42, 0, 0.58, 1) }),
+      withTiming(0.6, { duration: 4000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
@@ -64,44 +64,10 @@ const AnimatedBackground = () => {
     opacity: opacity2.value,
   }));
 
-  const layers = Array.from({ length: 64 });
-
   return (
-    <View style={styles.backgroundContainer}>
-      <Animated.View style={[styles.circleContainer, { top: -190, left: -190, width: 400, height: 400 }, animatedStyle1]}>
-        {layers.map((_, i) => (
-          <View
-            key={`c1-${i}`}
-            style={{
-              position: 'absolute',
-              top: i * 1.5,
-              left: i * 1.5,
-              width: 380 - i * 3,
-              height: 380 - i * 3,
-              borderRadius: (380 - i * 3) / 2,
-              backgroundColor: '#3B82F6',
-              opacity: 0.005 + (i * 0.0006),
-            }}
-          />
-        ))}
-      </Animated.View>
-      <Animated.View style={[styles.circleContainer, { bottom: -200, right: -200, width: 420, height: 420 }, animatedStyle2]}>
-        {layers.map((_, i) => (
-          <View
-            key={`c2-${i}`}
-            style={{
-              position: 'absolute',
-              top: i * 1.5,
-              left: i * 1.5,
-              width: 400 - i * 3,
-              height: 400 - i * 3,
-              borderRadius: (400 - i * 3) / 2,
-              backgroundColor: '#22D3EE',
-              opacity: 0.005 + (i * 0.0006),
-            }}
-          />
-        ))}
-      </Animated.View>
+    <View style={styles.backgroundContainer} pointerEvents="none">
+      <Animated.View style={[styles.circle1, animatedStyle1]} />
+      <Animated.View style={[styles.circle2, animatedStyle2]} />
     </View>
   );
 };
@@ -113,7 +79,10 @@ export default function CoinScreen() {
   const totalEarned = stepEarnings + (coins || 0);
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={['#0D1B2A', '#1B263B', '#415A77']}
+      style={styles.container}
+    >
       <AnimatedBackground />
 
       <Text style={styles.header}>Your Earning</Text>
@@ -140,23 +109,38 @@ export default function CoinScreen() {
           </Text>
         </LinearGradient>
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111827',
     paddingHorizontal: 16,
     paddingTop: 60,
     overflow: 'hidden',
   },
   backgroundContainer: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
   },
-  circleContainer: {
+  circle1: {
     position: 'absolute',
+    top: -80,
+    left: -80,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: '#8BC34A',
+  },
+  circle2: {
+    position: 'absolute',
+    bottom: -100,
+    right: -100,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: '#4CAF50',
   },
   header: {
     fontSize: 24,
