@@ -19,7 +19,7 @@ const getLocalDateString = (date = new Date()) => {
 // Generate daily challenge for today
 const generateDailyChallenge = () => {
   const today = getLocalDateString();
-  // Use date as seed for consistent challenge per day
+//   Use date as seed for consistent challenge per day
   const seed = parseInt(today.replace(/-/g, ''), 10);
   const random = Math.sin(seed) * 10000;
   const randomInt = Math.floor((random - Math.floor(random)) * 6) + 5; // 5-10
@@ -128,9 +128,10 @@ export default function SocialScreen() {
       const initialTodaysSteps = storedData ? parseInt(storedData, 10) : 0;
       setTodaysSteps(initialTodaysSteps);
 
-      // Generate daily challenge
-      const challenge = generateDailyChallenge();
-      setDailyChallenge(challenge);
+    // Generate daily challenge
+    //   const challenge = 10;
+    const challenge = generateDailyChallenge();
+    setDailyChallenge(challenge);
       
       // Check if user has joined today's challenge
       await checkChallengeStatus();
