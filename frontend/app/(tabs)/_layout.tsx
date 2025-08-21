@@ -183,6 +183,17 @@ export default function TabLayout() {
             }} 
           />
           <Tabs.Screen 
+            name="social" 
+            options={{ 
+              title: 'Social', 
+              tabBarIcon: ({ color, focused }) => (
+                <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
+                  <IconSymbol size={26} name="person.2.fill" color={color} />
+                </View>
+              )
+            }} 
+          />
+          <Tabs.Screen 
             name="MapScreen" 
             options={{ 
               title: 'Map', 
