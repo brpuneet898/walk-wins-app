@@ -172,12 +172,12 @@ export default function TabLayout() {
             }} 
           />
           <Tabs.Screen 
-            name="coin" 
+            name="rewards" 
             options={{ 
-              title: 'Coins', 
+              title: 'Rewards', 
               tabBarIcon: ({ color, focused }) => (
                 <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
-                  <IconSymbol size={26} name="indianrupeesign.circle.fill" color={color} />
+                  <IconSymbol size={26} name="gift" color={color} />
                 </View>
               )
             }} 
@@ -206,6 +206,12 @@ export default function TabLayout() {
           />
           
           {/* Hidden screens - accessible only through specific buttons */}
+          <Tabs.Screen 
+            name="coin" 
+            options={{ 
+              href: null, // Hide from tab bar
+            }} 
+          />
           <Tabs.Screen 
             name="leaderboard" 
             options={{ 
@@ -261,7 +267,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
-    transition: 'all 0.2s ease',
   },
   activeIconContainer: {
     backgroundColor: 'rgba(139,195,74,0.25)', // More visible background

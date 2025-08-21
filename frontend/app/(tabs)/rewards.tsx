@@ -114,62 +114,6 @@ export default function RewardsScreen() {
           <Text style={styles.pointsSubtext}>From walking & challenges</Text>
         </View>
 
-        {/* Coins Breakdown Section */}
-        <View style={styles.coinsBreakdownContainer}>
-          <Text style={styles.breakdownTitle}>Coins Earned Breakdown</Text>
-          
-          <View style={styles.breakdownCard}>
-            <LinearGradient
-              colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.03)']}
-              style={styles.breakdownGradient}
-            >
-              <View style={styles.breakdownRow}>
-                <View style={styles.breakdownIconContainer}>
-                  <IconSymbol name="house.fill" size={20} color="#00c6ff" />
-                </View>
-                <View style={styles.breakdownInfo}>
-                  <Text style={styles.breakdownLabel}>Step Earnings</Text>
-                  <Text style={styles.breakdownDescription}>From {lifetimeSteps.toLocaleString()} lifetime steps</Text>
-                </View>
-                <Text style={styles.breakdownAmount}>+₹{(lifetimeSteps * 0.01).toFixed(2)}</Text>
-              </View>
-              
-              <View style={styles.breakdownDivider} />
-              
-              <View style={styles.breakdownRow}>
-                <View style={styles.breakdownIconContainer}>
-                  <IconSymbol name="trophy.fill" size={20} color="#FFD700" />
-                </View>
-                <View style={styles.breakdownInfo}>
-                  <Text style={styles.breakdownLabel}>Daily Challenges</Text>
-                  <Text style={styles.breakdownDescription}>Completed challenges</Text>
-                </View>
-                <Text style={styles.breakdownAmount}>+{Math.max(0, coins - Math.floor(lifetimeSteps * 0.01))} coins</Text>
-              </View>
-              
-              <View style={styles.breakdownDivider} />
-              
-              <View style={styles.breakdownRow}>
-                <View style={styles.breakdownIconContainer}>
-                  <IconSymbol name="person.2.fill" size={20} color="#8BC34A" />
-                </View>
-                <View style={styles.breakdownInfo}>
-                  <Text style={styles.breakdownLabel}>Challenge & Other Rewards</Text>
-                  <Text style={styles.breakdownDescription}>Daily challenges & bonuses</Text>
-                </View>
-                <Text style={styles.breakdownAmount}>+{Math.max(0, coins - Math.floor(lifetimeSteps * 0.01 * 100) / 100)} coins</Text>
-              </View>
-              
-              <View style={styles.breakdownDivider} />
-              
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total Earned</Text>
-                <GradientText style={styles.totalAmount}>₹{((lifetimeSteps * 0.01) + coins).toFixed(2)}</GradientText>
-              </View>
-            </LinearGradient>
-          </View>
-        </View>
-
         {/* Available Rewards Section */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Available Rewards</Text>
