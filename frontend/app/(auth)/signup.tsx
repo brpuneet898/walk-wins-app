@@ -12,7 +12,7 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Path } from 'react-native-svg';
 
 // Options for the selection buttons
-const fitnessGoals = ['Weight Loss', 'Endurance', 'Daily Activity'];
+const fitnessGoals = ['Weight Loss', 'Endurance', 'Routine'];
 const occupationTypes = ['Sedentary', 'Active', 'Very Active'];
 const preferredTimes = ['Morning', 'Evening', 'Night'];
 const genderOptions = ['Male', 'Female', 'Prefer not to say'];
@@ -559,6 +559,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: 'rgba(31, 41, 55, 0.8)',
+    height: 'auto',
     padding: 24,
     borderRadius: 16,
     borderWidth: 1,
@@ -768,7 +769,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   step2ScrollView: {
-    maxHeight: 300,
+    maxHeight: 430,
     marginBottom: 10,
   },
   dropdownContainer: {
