@@ -1,8 +1,6 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList } from 'react-native';
-import { useSteps, checkBoostTime } from '../../context/StepContext';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-// Make sure you have these packages installed
+import { View, Text, StyleSheet } from 'react-native';
+import { useSteps } from '../../context/StepContext';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -14,7 +12,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 
 // --- START: GradientText Component ---
-// This component applies a gradient to any text passed to it.
 const GradientText = (props) => (
   <MaskedView maskElement={<Text {...props} />}>
     <LinearGradient
@@ -31,27 +28,27 @@ const GradientText = (props) => (
 const AnimatedBackground = () => {
   const scale1 = useSharedValue(1);
   const scale2 = useSharedValue(1);
-  const opacity1 = useSharedValue(0.6);
-  const opacity2 = useSharedValue(0.6);
+  const opacity1 = useSharedValue(0.3);
+  const opacity2 = useSharedValue(0.3);
 
   useEffect(() => {
     scale1.value = withRepeat(
-      withTiming(1.2, { duration: 2500, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }),
+      withTiming(1.1, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
     scale2.value = withRepeat(
-      withTiming(1.2, { duration: 3000, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }),
+      withTiming(1.1, { duration: 4000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
     opacity1.value = withRepeat(
-      withTiming(1, { duration: 2500, easing: Easing.bezier(0.42, 0, 0.58, 1) }),
+      withTiming(0.6, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
     opacity2.value = withRepeat(
-      withTiming(1, { duration: 3000, easing: Easing.bezier(0.42, 0, 0.58, 1) }),
+      withTiming(0.6, { duration: 4000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
@@ -67,56 +64,25 @@ const AnimatedBackground = () => {
     opacity: opacity2.value,
   }));
 
-  const layers = Array.from({ length: 64 });
-
   return (
-    <View style={styles.backgroundContainer}>
-      <Animated.View style={[styles.circleContainer, { top: -190, left: -190, width: 400, height: 400 }, animatedStyle1]}>
-        {layers.map((_, i) => (
-          <View
-            key={`c1-${i}`}
-            style={{
-              position: 'absolute',
-              top: i * 1.5,
-              left: i * 1.5,
-              width: 380 - i * 3,
-              height: 380 - i * 3,
-              borderRadius: (380 - i * 3) / 2,
-              backgroundColor: '#3B82F6',
-              opacity: 0.005 + (i * 0.0006),
-            }}
-          />
-        ))}
-      </Animated.View>
-      <Animated.View style={[styles.circleContainer, { bottom: -200, right: -200, width: 420, height: 420 }, animatedStyle2]}>
-        {layers.map((_, i) => (
-          <View
-            key={`c2-${i}`}
-            style={{
-              position: 'absolute',
-              top: i * 1.5,
-              left: i * 1.5,
-              width: 400 - i * 3,
-              height: 400 - i * 3,
-              borderRadius: (400 - i * 3) / 2,
-              backgroundColor: '#22D3EE',
-              opacity: 0.005 + (i * 0.0006),
-            }}
-          />
-        ))}
-      </Animated.View>
+    <View style={styles.backgroundContainer} pointerEvents="none">
+      <Animated.View style={[styles.circle1, animatedStyle1]} />
+      <Animated.View style={[styles.circle2, animatedStyle2]} />
     </View>
   );
 };
 
 export default function CoinScreen() {
-  const { coins = 0, lifetimeSteps = 0, dailyRecords = [] } = useSteps() as any;
+  const { coins = 0, lifetimeSteps = 0 } = useSteps() as any;
   const pricePerStep = 0.01;
   const stepEarnings = lifetimeSteps * pricePerStep;
   const totalEarned = stepEarnings + (coins || 0);
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={['#0D1B2A', '#1B263B', '#415A77']}
+      style={styles.container}
+    >
       <AnimatedBackground />
 
       <Text style={styles.header}>Your Earning</Text>
@@ -129,43 +95,52 @@ export default function CoinScreen() {
         <Text style={styles.lifetimeStepsText}>Based on {lifetimeSteps} lifetime steps</Text>
       </View>
 
-      <Text style={styles.historyHeader}>Daily History</Text>
-
-      <FlatList
-        data={dailyRecords || []}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <View style={styles.cardLeft}>
-              <Text style={styles.cardDate}>{item.id}</Text>
-              {item.time ? <Text style={styles.cardTime}>{String(item.time)}</Text> : null}
-            </View>
-            <View style={styles.cardRight}>
-              <Text style={styles.cardSteps}>{item.steps} steps</Text>
-            </View>
-          </View>
-        )}
-        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-        ListEmptyComponent={<Text style={styles.emptyText}>No daily records yet.</Text>}
-        contentContainerStyle={{ paddingBottom: 32, paddingTop: 8 }}
-      />
-    </View>
+      <View style={styles.infoContainer}>
+        <LinearGradient
+          colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
+          style={styles.infoBox}
+        >
+          <Text style={styles.infoTitle}>How Earnings Work</Text>
+          <Text style={styles.infoText}>
+            • You earn ₹0.01 per step walked{'\n'}
+            • Daily step tracking adds to lifetime total{'\n'}
+            • Referral bonuses boost your earnings{'\n'}
+            • Check your daily history in Profile tab
+          </Text>
+        </LinearGradient>
+      </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111827',
     paddingHorizontal: 16,
     paddingTop: 60,
     overflow: 'hidden',
   },
   backgroundContainer: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
   },
-  circleContainer: {
+  circle1: {
     position: 'absolute',
+    top: -80,
+    left: -80,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: '#8BC34A',
+  },
+  circle2: {
+    position: 'absolute',
+    bottom: -100,
+    right: -100,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: '#4CAF50',
   },
   header: {
     fontSize: 24,
@@ -195,57 +170,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
   },
-  historyHeader: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 12,
-    color: '#FFFFFF',
-    marginHorizontal: 8,
-  },
-
-  /* NEW: Card styles for each daily entry */
-  card: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(31, 41, 55, 0.45)',
-    borderRadius: 12,
-    padding: 14,
+  infoContainer: {
     marginHorizontal: 15,
-    borderWidth: 1,
-    borderColor: '#1f2937',
-    shadowColor: 'rgba(31, 41, 55, 0.45)',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  cardLeft: { flex: 1, paddingRight: 8 },
-  cardDate: { fontSize: 16, color: '#E5E7EB', fontWeight: '600' },
-  cardTime: { color: '#9CA3AF', fontSize: 12, marginTop: 4},
-
-  cardRight: { alignItems: 'flex-end', minWidth: 110 },
-  cardSteps: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginTop: 4 },
-
-  historyItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#374151',
-  },
-  historyDate: {
-    fontSize: 16,
-    color: '#D1D5DB',
-  },
-  historySteps: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  emptyText: {
-    textAlign: 'center',
     marginTop: 20,
+  },
+  infoBox: {
+    padding: 25,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  infoText: {
+    fontSize: 14,
     color: '#9CA3AF',
-  }
+    lineHeight: 22,
+  },
 });

@@ -1,5 +1,3 @@
-// Fallback for using MaterialIcons on Android and web.
-
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
 import { ComponentProps } from 'react';
@@ -20,7 +18,10 @@ const MAPPING = {
   'chevron.right': 'chevron-right',
   'indianrupeesign.circle.fill': 'currency-rupee',
   'person.fill': 'person',
-  'trophy.fill': 'emoji-events'
+  'trophy.fill': 'emoji-events',
+  'map.fill': 'map',
+  'person.2.fill': 'people',
+  'gift': 'card-giftcard'
 } as IconMapping;
 
 /**

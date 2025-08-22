@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import React, { useEffect, ReactNode } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { HapticTab } from '@/components/HapticTab';
 import { IconSymbol } from '@/components/ui/IconSymbol';
@@ -98,46 +99,131 @@ const AppDataController = ({ children }: { children: ReactNode }) => {
   return children;
 };
 
+// Enhanced TabBarBackground with more visible changes
+const TabBarBackground = () => (
+  <View style={styles.tabBarBackgroundContainer}>
+    <LinearGradient
+      colors={['#0D1B2A', '#1B263B', '#0D1B2A']} // Changed gradient for more visibility
+      style={styles.tabBarGradient}
+    />
+    <BlurView 
+      tint="dark" 
+      intensity={20} // Reduced for better visibility
+      style={StyleSheet.absoluteFill} 
+    />
+    {/* Enhanced border with more visibility */}
+    <View style={styles.tabBarBorder} />
+    <View style={styles.tabBarTopAccent} />
+  </View>
+);
+
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
   return (
     <StepProvider>
       <AppDataController>
         <Tabs
           screenOptions={{
-            tabBarActiveTintColor: '#FFFFFF',
-            tabBarInactiveTintColor: '#6c7584',
+            tabBarActiveTintColor: '#8BC34A', // Green for active
+            tabBarInactiveTintColor: '#94A3B8', // Lighter gray for inactive
             headerShown: false,
             tabBarButton: HapticTab,
-            tabBarBackground: () => (
-              <View style={styles.tabBarBackgroundContainer}>
-                <BlurView tint="dark" intensity={80} style={StyleSheet.absoluteFill} />
-              </View>
-            ),
+            tabBarBackground: () => <TabBarBackground />,
             tabBarStyle: {
               position: 'absolute',
               bottom: 0,
-              left: 20,
-              right: 20,
-              height: 80,
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              backgroundColor: '#1d2635',
-              borderTopWidth: 2,
-              borderTopColor: '#384150',
-              shadowColor: '#ffffffff',
-              shadowOffset: { width: 0, height: -5 },
-              shadowOpacity: 0.5,
-              shadowRadius: 10,
-              elevation: 10,
+              left: 0,
+              right: 0,
+              height: 90, // Increased height
+              borderTopLeftRadius: 30, // More rounded
+              borderTopRightRadius: 30,
+              backgroundColor: 'transparent',
+              borderTopWidth: 0,
+              shadowColor: '#8BC34A', // Green shadow
+              shadowOffset: { width: 0, height: -10 },
+              shadowOpacity: 0.25,
+              shadowRadius: 25,
+              elevation: 20,
+              paddingBottom: Platform.OS === 'ios' ? 30 : 15,
+              paddingTop: 15,
+              paddingHorizontal: 10,
+            },
+            tabBarLabelStyle: {
+              fontSize: 11,
+              fontWeight: '700', // Bolder text
+              marginTop: 4,
+              marginBottom: Platform.OS === 'ios' ? 0 : 5,
+              textTransform: 'uppercase', // Make labels uppercase
+              letterSpacing: 0.5,
+            },
+            tabBarIconStyle: {
+              marginTop: 8,
             },
           }}
         >
-          <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} /> }} />
-          <Tabs.Screen name="coin" options={{ title: 'Coins', tabBarIcon: ({ color }) => <IconSymbol size={28} name="indianrupeesign.circle.fill" color={color} /> }} />
-          <Tabs.Screen name="MapScreen" options={{ title: 'Map', tabBarIcon: ({ color }) => <IconSymbol size={28} name="map.fill" color={color} /> }} />
-          <Tabs.Screen name="leaderboard" options={{ title: 'Leaders', tabBarIcon: ({ color }) => <IconSymbol size={28} name="trophy.fill" color={color} /> }} />
-          <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} /> }} />
+          <Tabs.Screen 
+            name="index" 
+            options={{ 
+              title: 'Home', 
+              tabBarIcon: ({ color, focused }) => (
+                <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
+                  <IconSymbol size={26} name="house.fill" color={color} />
+                </View>
+              )
+            }} 
+          />
+          <Tabs.Screen 
+            name="rewards" 
+            options={{ 
+              title: 'Rewards', 
+              tabBarIcon: ({ color, focused }) => (
+                <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
+                  <IconSymbol size={26} name="gift" color={color} />
+                </View>
+              )
+            }} 
+          />
+          <Tabs.Screen 
+            name="social" 
+            options={{ 
+              title: 'Social', 
+              tabBarIcon: ({ color, focused }) => (
+                <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
+                  <IconSymbol size={26} name="person.2.fill" color={color} />
+                </View>
+              )
+            }} 
+          />
+          <Tabs.Screen 
+            name="MapScreen" 
+            options={{ 
+              title: 'Map', 
+              tabBarIcon: ({ color, focused }) => (
+                <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
+                  <IconSymbol size={26} name="map.fill" color={color} />
+                </View>
+              )
+            }} 
+          />
+          
+          {/* Hidden screens - accessible only through specific buttons */}
+          <Tabs.Screen 
+            name="coin" 
+            options={{ 
+              href: null, // Hide from tab bar
+            }} 
+          />
+          <Tabs.Screen 
+            name="leaderboard" 
+            options={{ 
+              href: null, // Hide from tab bar
+            }} 
+          />
+          <Tabs.Screen 
+            name="profile" 
+            options={{ 
+              href: null, // Hide from tab bar
+            }} 
+          />
         </Tabs>
       </AppDataController>
     </StepProvider>
@@ -147,8 +233,49 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   tabBarBackgroundContainer: {
     ...StyleSheet.absoluteFillObject,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
     overflow: 'hidden',
+  },
+  tabBarGradient: {
+    ...StyleSheet.absoluteFillObject,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+  },
+  tabBarBorder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2, // Thicker border
+    backgroundColor: 'rgba(139,195,74,0.6)', // More visible green
+  },
+  tabBarTopAccent: {
+    position: 'absolute',
+    top: 2,
+    left: '50%',
+    width: 60,
+    height: 4,
+    backgroundColor: '#8BC34A',
+    borderRadius: 2,
+    marginLeft: -30, // Center the accent
+  },
+  iconContainer: {
+    width: 45, // Larger container
+    height: 45,
+    borderRadius: 22.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  activeIconContainer: {
+    backgroundColor: 'rgba(139,195,74,0.25)', // More visible background
+    borderWidth: 2, // Thicker border
+    borderColor: 'rgba(139,195,74,0.6)',
+    shadowColor: '#8BC34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });

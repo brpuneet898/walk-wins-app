@@ -1,19 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, AppState } from 'react-native';
+import { View, Text, StyleSheet, Pressable, AppState, ScrollView } from 'react-native';
 import { Pedometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../../firebaseConfig';
-import { doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, increment, collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { useSteps } from '../../context/StepContext';
-import { FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
   withTiming,
+  withSpring,
   Easing,
 } from 'react-native-reanimated';
-import { Svg, Circle } from 'react-native-svg';
+import { Svg, Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const getLocalDateString = (date = new Date()) => {
   const year = date.getFullYear();
@@ -22,30 +25,45 @@ const getLocalDateString = (date = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
+// Shared coin calculation logic - same as in coin.tsx with proper error handling
+const calculateTotalEarnings = (lifetimeSteps = 0, coins = 0) => {
+  const pricePerStep = 0.01;
+  
+  // Ensure we have valid numbers
+  const validLifetimeSteps = Number(lifetimeSteps) || 0;
+  const validCoins = Number(coins) || 0;
+  
+  const stepEarnings = validLifetimeSteps * pricePerStep;
+  const totalEarned = stepEarnings + validCoins;
+  
+  // Return 0 if result is NaN or negative
+  return isNaN(totalEarned) || totalEarned < 0 ? 0 : totalEarned;
+};
+
 const AnimatedBackground = () => {
   const scale1 = useSharedValue(1);
   const scale2 = useSharedValue(1);
-  const opacity1 = useSharedValue(0.6);
-  const opacity2 = useSharedValue(0.6);
+  const opacity1 = useSharedValue(0.3);
+  const opacity2 = useSharedValue(0.3);
 
   React.useEffect(() => {
     scale1.value = withRepeat(
-      withTiming(1.2, { duration: 2500, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }),
+      withTiming(1.1, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
     scale2.value = withRepeat(
-      withTiming(1.2, { duration: 3000, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }),
+      withTiming(1.1, { duration: 4000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
     opacity1.value = withRepeat(
-      withTiming(1, { duration: 2500, easing: Easing.bezier(0.42, 0, 0.58, 1) }),
+      withTiming(0.6, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
     opacity2.value = withRepeat(
-      withTiming(1, { duration: 3000, easing: Easing.bezier(0.42, 0, 0.58, 1) }),
+      withTiming(0.6, { duration: 4000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true
     );
@@ -61,45 +79,64 @@ const AnimatedBackground = () => {
     opacity: opacity2.value,
   }));
 
-  const layers = Array.from({ length: 48 });
-
   return (
     <View style={styles.backgroundContainer} pointerEvents="none">
-      <Animated.View style={[styles.circleContainer, { top: -160, left: -160, width: 360, height: 360 }, animatedStyle1]}>
-        {layers.map((_, i) => (
-          <View
-            key={`c1-${i}`}
-            style={{
-              position: 'absolute',
-              top: i * 1.2,
-              left: i * 1.2,
-              width: 340 - i * 3,
-              height: 340 - i * 3,
-              borderRadius: (340 - i * 3) / 2,
-              backgroundColor: '#3B82F6',
-              opacity: 0.004 + (i * 0.0009),
-            }}
-          />
-        ))}
-      </Animated.View>
+      <Animated.View style={[styles.circle1, animatedStyle1]} />
+      <Animated.View style={[styles.circle2, animatedStyle2]} />
+    </View>
+  );
+};
 
-      <Animated.View style={[styles.circleContainer, { bottom: -180, right: -180, width: 380, height: 380 }, animatedStyle2]}>
-        {layers.map((_, i) => (
-          <View
-            key={`c2-${i}`}
-            style={{
-              position: 'absolute',
-              top: i * 1.2,
-              left: i * 1.2,
-              width: 360 - i * 3,
-              height: 360 - i * 3,
-              borderRadius: (360 - i * 3) / 2,
-              backgroundColor: '#22D3EE',
-              opacity: 0.004 + (i * 0.0009),
-            }}
+// Weekly Progress Circle Component
+const WeeklyProgressCircle = ({ dayLabel, date, steps, goal, isToday }) => {
+  const progress = Math.min((steps / goal) * 100, 100);
+  const radius = 18;
+  const strokeWidth = 3;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (progress / 100) * circumference;
+
+  return (
+    <View style={[styles.weeklyCircleContainer, isToday && styles.todayCircle]}>
+      <View style={styles.weeklyCircle}>
+        <Svg width={50} height={50} viewBox="0 0 50 50">
+          <Defs>
+            <SvgGradient id={`weeklyGradient-${dayLabel}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <Stop offset="0%" stopColor={isToday ? "#FFD700" : "#8BC34A"} />
+              <Stop offset="100%" stopColor={isToday ? "#FFA000" : "#4CAF50"} />
+            </SvgGradient>
+          </Defs>
+          
+          {/* Background circle */}
+          <Circle
+            cx="25"
+            cy="25"
+            r={radius}
+            stroke="rgba(255,255,255,0.1)"
+            strokeWidth={strokeWidth}
+            fill="transparent"
           />
-        ))}
-      </Animated.View>
+          
+          {/* Progress circle */}
+          <Circle
+            cx="25"
+            cy="25"
+            r={radius}
+            stroke={`url(#weeklyGradient-${dayLabel})`}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            rotation="-90"
+            origin="25, 25"
+            fill="transparent"
+          />
+        </Svg>
+        
+        <View style={styles.weeklyCircleContent}>
+          <Text style={[styles.weeklyDayLabel, isToday && styles.todayLabel]}>{dayLabel}</Text>
+        </View>
+      </View>
+      <Text style={[styles.weeklyDate, isToday && styles.todayDate]}>{date}</Text>
     </View>
   );
 };
@@ -108,23 +145,143 @@ export default function HomeScreen() {
   const [todaysSteps, setTodaysSteps] = useState(0);
   const [isPedometerAvailable, setIsPedometerAvailable] = useState(false);
   const [dailyStepGoal, setDailyStepGoal] = useState(3000);
-  const { isLoggingOut, isBoostActive, boostType } = useSteps();
+  const [userRank, setUserRank] = useState(null);
+  const [weeklyData, setWeeklyData] = useState([]);
+  const [userProfile, setUserProfile] = useState(null); // 👈 ADD: User profile state
+  const { isLoggingOut, isBoostActive, boostType, coins, lifetimeSteps } = useSteps();
+  const router = useRouter();
   const isSyncing = useRef(false);
   const lastStepValueFromListener = useRef(0);
   const isInitialized = useRef(false);
 
-  const handleGoalChange = async (newGoal: number) => {
-    if (newGoal < 3000) newGoal = 3000;
-    setDailyStepGoal(newGoal);
-    const currentUser = auth.currentUser;
-    if (currentUser) {
-      const userDocRef = doc(db, 'users', currentUser.uid);
-      try {
-        await updateDoc(userDocRef, { dailyStepGoal: newGoal });
-      } catch (err) {
-        // ignore update errors silently
-      }
+  const coinScale = useSharedValue(1);
+  const user = auth.currentUser; // 👈 ADD: Get current user
+
+  // 👈 ADD: Function to get user initial
+  const getUserInitial = () => {
+    if (userProfile?.username) {
+      // Get first letter of username
+      return userProfile.username.charAt(0).toUpperCase();
+    } else if (user?.email) {
+      // Fallback to first letter of email
+      return user.email.charAt(0).toUpperCase();
     }
+    // Fallback to generic icon if no data
+    return null;
+  };
+
+  // Calculate total earnings using the same logic as coin.tsx
+  const totalEarnings = calculateTotalEarnings(lifetimeSteps, coins);
+
+  // 👈 ADD: Fetch user profile data
+  const fetchUserProfile = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          setUserProfile(userDoc.data());
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  };
+
+  // Fetch weekly data
+  const fetchWeeklyData = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      const today = new Date();
+      const weekData = [];
+      const dayLabels = ['M', 'T', 'W', 'Th', 'F', 'S', 'Su'];
+      
+      // Get Monday of current week
+      const monday = new Date(today);
+      const dayOfWeek = today.getDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Adjust for Sunday (0) and Monday (1)
+      monday.setDate(today.getDate() + diff);
+
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(monday);
+        date.setDate(monday.getDate() + i);
+        
+        const dateString = getLocalDateString(date);
+        const dayLabel = dayLabels[i];
+        const isToday = dateString === getLocalDateString(today);
+        
+        // Get steps for this date
+        const dailyStepsRef = doc(db, `users/${currentUser.uid}/dailySteps`, dateString);
+        const dailyStepsSnap = await getDoc(dailyStepsRef);
+        const steps = dailyStepsSnap.exists() ? dailyStepsSnap.data().steps || 0 : 0;
+        
+        weekData.push({
+          dayLabel,
+          date: date.getDate().toString(),
+          steps: isToday ? todaysSteps : steps,
+          goal: dailyStepGoal,
+          isToday
+        });
+      }
+      
+      setWeeklyData(weekData);
+    } catch (error) {
+      console.error('Error fetching weekly data:', error);
+    }
+  };
+
+  const fetchUserRank = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      const todayString = getLocalDateString();
+      
+      // Get all users' daily steps for today
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const userStepsData = [];
+
+      for (const userDoc of usersSnapshot.docs) {
+        const userId = userDoc.id;
+        const dailyStepsRef = doc(db, `users/${userId}/dailySteps`, todayString);
+        const dailyStepsSnap = await getDoc(dailyStepsRef);
+        
+        if (dailyStepsSnap.exists()) {
+          userStepsData.push({
+            userId,
+            steps: dailyStepsSnap.data().steps || 0
+          });
+        } else {
+          userStepsData.push({
+            userId,
+            steps: 0
+          });
+        }
+      }
+
+      // Sort by steps in descending order
+      userStepsData.sort((a, b) => b.steps - a.steps);
+
+      // Find current user's rank
+      const userRankIndex = userStepsData.findIndex(user => user.userId === currentUser.uid);
+      if (userRankIndex !== -1) {
+        setUserRank(userRankIndex + 1);
+      }
+    } catch (error) {
+      console.error('Error fetching user rank:', error);
+    }
+  };
+
+  const handleCoinPress = () => {
+    // Animate coin press
+    coinScale.value = withSpring(0.9, {}, () => {
+      coinScale.value = withSpring(1);
+    });
+    
+    // Navigate to coin screen
+    router.push('/coin');
   };
 
   const syncToFirebase = async () => {
@@ -145,6 +302,9 @@ export default function HomeScreen() {
       if (incrementAmount > 0) {
         await setDoc(dailyDocRef, { steps: currentStepCount });
         await updateDoc(userDocRef, { lifetimeTotalSteps: increment(incrementAmount) });
+        // Fetch updated rank and weekly data after syncing
+        await fetchUserRank();
+        await fetchWeeklyData();
       }
     } catch (error) {
       console.error('[SYNC] Error:', error);
@@ -166,6 +326,7 @@ export default function HomeScreen() {
 
       await finalizePreviousDaySteps();
 
+      // Fetch daily step goal from database
       const currentUser = auth.currentUser;
       if (currentUser) {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -178,6 +339,11 @@ export default function HomeScreen() {
       const storedData = await AsyncStorage.getItem(`dailySteps_${todayString}`);
       const initialTodaysSteps = storedData ? parseInt(storedData, 10) : 0;
       setTodaysSteps(initialTodaysSteps);
+
+      // Fetch initial data
+      await fetchUserProfile(); // 👈 ADD: Fetch user profile
+      await fetchUserRank();
+      await fetchWeeklyData();
 
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
@@ -223,6 +389,37 @@ export default function HomeScreen() {
       }
     };
   }, [isLoggingOut]);
+
+  // Listen for goal changes from profile page
+  useEffect(() => {
+    const checkForGoalUpdates = async () => {
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists() && userDoc.data().dailyStepGoal) {
+          const newGoal = userDoc.data().dailyStepGoal;
+          if (newGoal !== dailyStepGoal) {
+            setDailyStepGoal(newGoal);
+            await fetchWeeklyData(); // Refresh weekly data with new goal
+          }
+        }
+      }
+    };
+
+    // Check for updates every 5 seconds when app is active
+    const goalUpdateInterval = setInterval(checkForGoalUpdates, 5000);
+    
+    return () => clearInterval(goalUpdateInterval);
+  }, [dailyStepGoal]);
+
+  // Update weekly data when today's steps change
+  useEffect(() => {
+    if (weeklyData.length > 0) {
+      setWeeklyData(prev => prev.map(day => 
+        day.isToday ? { ...day, steps: todaysSteps } : day
+      ));
+    }
+  }, [todaysSteps]);
 
   useEffect(() => {
     const saveToDevice = async () => {
@@ -270,64 +467,174 @@ export default function HomeScreen() {
   };
 
   const progress = Math.min((todaysSteps / dailyStepGoal) * 100, 100);
-  const formattedStepCount = String(todaysSteps).padStart(4, '0');
+  const formattedStepCount = todaysSteps.toLocaleString();
+
+  const coinAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: coinScale.value }],
+  }));
 
   return (
     <View style={styles.page}>
-      <AnimatedBackground />
-      <View style={styles.headerContainer}>
-        <Text style={styles.headerTitle}>Today's Steps</Text>
-      </View>
-
-      {isBoostActive && (
-        <View style={styles.boostCard}>
-          <Text style={styles.boostTitle}>🌅 {boostType?.toUpperCase()} BOOST ACTIVE!</Text>
-          <Text style={styles.boostSubtitle}>Earning 2x coins! (0.02 per step)</Text>
-        </View>
-      )}
-
-      <View style={styles.centerArea}>
-        <View style={styles.stepBox}>
-          {/* Progress ring circle */}
-          <Svg width={220} height={220} viewBox="0 0 220 220">
-            <Circle cx="110" cy="110" r="95" stroke="rgba(255,255,255,0.06)" strokeWidth="10" fill="rgba(31,41,55,0.18)" />
-            <Circle
-              cx="110"
-              cy="110"
-              r="95"
-              stroke="#00C6FF"
-              strokeWidth="10"
-              strokeLinecap="round"
-              strokeDasharray={`${2 * Math.PI * 95}`}
-              strokeDashoffset={`${(1 - progress / 100) * (2 * Math.PI * 95)}`}
-              rotation="-90"
-              origin="110, 110"
-            />
-            <Text />
-          </Svg>
-
-          <View style={styles.stepInner}>
-            <Text style={styles.stepCount}>{formattedStepCount}</Text>
-          </View>
-        </View>
-
-        <View style={styles.goalContainer}>
-          <Text style={styles.goalText}>Daily Goal: {dailyStepGoal} steps</Text>
-          <View style={styles.goalButtons}>
-            <Pressable onPress={() => handleGoalChange(dailyStepGoal - 100)}>
-              <FontAwesome name="minus-circle" size={32} color="#dc3545" />
-            </Pressable>
-            <Pressable onPress={() => handleGoalChange(dailyStepGoal + 100)}>
-              <FontAwesome name="plus-circle" size={32} color="#28a745" />
+      <LinearGradient
+        colors={['#0D1B2A', '#1B263B', '#415A77']}
+        style={styles.gradientBackground}
+      >
+        {/* Animated Background - Outside ScrollView to prevent clipping */}
+        <AnimatedBackground />
+        
+        {/* Single ScrollView with all content */}
+        <ScrollView 
+          style={styles.scrollContainer}
+          contentContainerStyle={styles.scrollContentContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <View style={styles.headerContainer}>
+            <View style={styles.profileSection}>
+              <Pressable style={styles.avatar} onPress={() => router.push('/profile')}>
+                {/* 👈 UPDATED: Changed fallback icon color to blue */}
+                {getUserInitial() ? (
+                  <Text style={styles.avatarInitial}>{getUserInitial()}</Text>
+                ) : (
+                  <FontAwesome name="user" size={16} color="#64B5F6" />
+                )}
+              </Pressable>
+              <View>
+                <Text style={styles.headerTitle}>My Progress</Text>
+                <Text style={styles.dateText}>Today's Steps</Text>
+              </View>
+            </View>
+            
+            {/* Coin Display - Replaces notification button */}
+            <Pressable onPress={handleCoinPress}>
+              <Animated.View style={[styles.coinContainer, coinAnimatedStyle]}>
+                <LinearGradient
+                  colors={['rgba(255,215,0,0.2)', 'rgba(255,193,7,0.15)']}
+                  style={styles.coinGradient}
+                >
+                  <FontAwesome name="database" size={16} color="#FFD700" />
+                  <Text style={styles.coinText}>
+                    ₹ {totalEarnings >= 0 ? totalEarnings.toFixed(2) : '0.00'}
+                  </Text>
+                </LinearGradient>
+              </Animated.View>
             </Pressable>
           </View>
-        </View>
 
-        <View style={styles.progressBarBackground}>
-          <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-        </View>
-        <Text style={styles.progressText}>{progress.toFixed(0)}% Complete</Text>
-      </View>
+          {/* Boost Card */}
+          {isBoostActive && (
+            <LinearGradient
+              colors={['#8BC34A', '#689F38']}
+              style={styles.boostCard}
+            >
+              <Ionicons name="flash" size={16} color="#FFFFFF" />
+              <Text style={styles.boostTitle}>
+                🌅 {boostType?.toUpperCase()} BOOST ACTIVE!
+              </Text>
+              <Text style={styles.boostSubtitle}>Earning 2x coins! (0.02 per step)</Text>
+            </LinearGradient>
+          )}
+
+          {/* Spacer to restore gap between header and progress circle */}
+          <View style={styles.spacer} />
+
+          {/* Main Progress Circle */}
+          <View style={styles.stepContainer}>
+            <LinearGradient
+              colors={['rgba(139,195,74,0.1)', 'rgba(76,175,80,0.05)']}
+              style={styles.stepBackground}
+            >
+              <Svg width={280} height={280} viewBox="0 0 280 280">
+                <Defs>
+                  <SvgGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <Stop offset="0%" stopColor="#8BC34A" />
+                    <Stop offset="100%" stopColor="#4CAF50" />
+                  </SvgGradient>
+                </Defs>
+                
+                <Circle
+                  cx="140"
+                  cy="140"
+                  r="120"
+                  stroke="rgba(255,255,255,0.1)"
+                  strokeWidth="15"
+                  fill="transparent"
+                />
+                <Circle
+                  cx="140"
+                  cy="140"
+                  r="120"
+                  stroke="url(#progressGradient)"
+                  strokeWidth="15"
+                  strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 120}`}
+                  strokeDashoffset={`${(1 - progress / 100) * (2 * Math.PI * 120)}`}
+                  rotation="-90"
+                  origin="140, 140"
+                  fill="transparent"
+                />
+              </Svg>
+
+              <View style={styles.stepInner}>
+                <Text style={styles.stepCount}>{formattedStepCount}</Text>
+                <Text style={styles.goalText}>of {dailyStepGoal.toLocaleString()} goal</Text>
+                
+                <View style={styles.locationDot}>
+                  <Ionicons name="location" size={12} color="#8BC34A" />
+                </View>
+              </View>
+            </LinearGradient>
+          </View>
+
+          {/* Weekly Progress Circles */}
+          <View style={styles.weeklyContainer}>
+            <Text style={styles.weeklyTitle}>This Week</Text>
+            <View style={styles.weeklyRow}>
+              {weeklyData.map((day, index) => (
+                <WeeklyProgressCircle
+                  key={index}
+                  dayLabel={day.dayLabel}
+                  date={day.date}
+                  steps={day.steps}
+                  goal={day.goal}
+                  isToday={day.isToday}
+                />
+              ))}
+            </View>
+          </View>
+
+          {/* Goal Display Only */}
+          <View style={styles.goalDisplayContainer}>
+            <Text style={styles.goalDisplayText}>
+              Daily Goal: {dailyStepGoal.toLocaleString()} steps
+            </Text>
+            <Text style={styles.goalEditHint}>
+              💡 Tap your profile to edit goal
+            </Text>
+          </View>
+
+          {/* Rank Box */}
+          <Pressable style={styles.rankBox} onPress={() => router.push('/leaderboard')}>
+            <LinearGradient
+              colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
+              style={styles.rankBoxGradient}
+            >
+              <View style={styles.rankContent}>
+                <View style={styles.rankInfo}>
+                  <Text style={styles.rankLabel}>🏆 Your Rank</Text>
+                  <Text style={styles.rankNumber}>
+                    {userRank ? `# ${userRank}` : '# —'}
+                  </Text>
+                  <Text style={styles.rankSteps}>{formattedStepCount} steps today</Text>
+                </View>
+                <View style={styles.rankArrow}>
+                  <FontAwesome name="chevron-right" size={20} color="#8BC34A" />
+                </View>
+              </View>
+            </LinearGradient>
+          </Pressable>
+        </ScrollView>
+      </LinearGradient>
     </View>
   );
 }
@@ -335,127 +642,281 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   page: {
     flex: 1,
-    backgroundColor: '#111827',
+  },
+  gradientBackground: {
+    flex: 1,
   },
   backgroundContainer: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  circleContainer: {
     position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0,
   },
-
+  circle1: {
+    position: 'absolute',
+    top: -80,
+    left: -80,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: '#8BC34A',
+  },
+  circle2: {
+    position: 'absolute',
+    bottom: -100,
+    right: -100,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: '#4CAF50',
+  },
+  scrollContainer: {
+    flex: 1,
+    zIndex: 1,
+  },
+  scrollContentContainer: {
+    flexGrow: 1,
+    paddingBottom: 120,
+  },
   headerContainer: {
-    paddingTop: 40, // moved down
-    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
+  },
+  profileSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(100,181,246,0.2)', // 👈 CHANGED: Blue background instead of green
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    borderWidth: 2, // 👈 ADD: Border for more contrast
+    borderColor: '#64B5F6', // 👈 ADD: Blue border
+  },
+  // 👈 UPDATED: New style for the initial text with blue color
+  avatarInitial: {
+    fontSize: 16, // Same size as the original icon
+    fontWeight: '900',
+    color: '#64B5F6', // 👈 CHANGED: Blue text instead of green
+    textAlign: 'center',
   },
   headerTitle: {
-    color: '#fff',
-    fontSize: 24, // match coin header
+    color: '#FFFFFF',
+    fontSize: 18,
     fontWeight: '700',
   },
-
+  dateText: {
+    color: '#888888',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  // ...rest of existing styles remain the same...
+  coinContainer: {
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  coinGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.3)',
+  },
+  coinText: {
+    color: '#FFD700',
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
   boostCard: {
-    backgroundColor: 'rgba(31,41,55,0.45)',
-    marginHorizontal: 16,
-    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 20,
     padding: 12,
     borderRadius: 12,
-    alignItems: 'center',
   },
-  boostTitle: { color: '#fff', fontWeight: '700' },
-  boostSubtitle: { color: '#cbd5e1', fontSize: 12, marginTop: 4 },
-
-  centerArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  stepBox: {
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    justifyContent: 'center',
+  boostTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 8,
+    flex: 1,
+  },
+  boostSubtitle: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 11,
+  },
+  spacer: {
+    height: 70,
+  },
+  stepContainer: {
+    marginBottom: 30,
     alignItems: 'center',
-    marginBottom: 18,
-    // background kept subtle to match overall aesthetic
-    backgroundColor: 'transparent',
+    paddingHorizontal: 20,
+  },
+  stepBackground: {
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#8BC34A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
   },
   stepInner: {
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepCount: { fontSize: 48, fontWeight: 'bold', color: '#fff' },
-
-  goalContainer: {
-    marginTop: 10,
-    alignItems: 'center',
+  stepCount: {
+    fontSize: 42,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    textAlign: 'center',
   },
   goalText: {
-    fontSize: 16,
-    color: '#9CA3AF',
-  },
-  goalButtons: {
-    flexDirection: 'row',
-    marginTop: 10,
-    width: 150,
-    justifyContent: 'space-around',
-  },
-
-  progressBarBackground: {
-    width: '80%',
-    height: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 10,
-    marginTop: 20,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#00C6FF',
-    borderRadius: 10,
-  },
-  progressText: {
+    fontSize: 14,
+    color: '#888888',
     marginTop: 8,
-    fontSize: 14,
-    color: '#9CA3AF',
+    textAlign: 'center',
   },
-
-  // legacy / fallback styles (kept for safety)
-  container: { flex: 1, backgroundColor: '#fff', paddingTop: 60, alignItems: 'center' },
-  header: { fontSize: 32, fontWeight: 'bold', marginBottom: 20 },
-  content: { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%' },
-
-  boostBanner: {
-    backgroundColor: '#FFD700',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 15,
+  locationDot: {
+    marginTop: 16,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(139,195,74,0.2)',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#FFA500',
+    justifyContent: 'center',
   },
-  boostText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#FF6B00',
-    textAlign: 'center',
+  weeklyContainer: {
+    width: '100%',
+    marginBottom: 30,
+    alignItems: 'center',
+    paddingHorizontal: 20,
   },
-  boostSubtext: {
-    fontSize: 12,
-    color: '#FF6B00',
-    marginTop: 3,
-    textAlign: 'center',
-  },
-
-  // debug / test styles left intentionally (not used)
-  testButton: {
-    backgroundColor: '#007AFF',
-    padding: 15,
-    borderRadius: 10,
-    marginTop: 20,
-  },
-  testButtonText: {
-    color: 'white',
+  weeklyTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
+    color: '#BBBBBB',
+    fontWeight: '600',
+    marginBottom: 15,
+  },
+  weeklyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 10,
+  },
+  weeklyCircleContainer: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  todayCircle: {
+    backgroundColor: 'rgba(255,215,0,0.1)',
+    borderRadius: 8,
+    paddingVertical: 5,
+  },
+  weeklyCircle: {
+    width: 50,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  weeklyCircleContent: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weeklyDayLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  todayLabel: {
+    color: '#FFD700',
+  },
+  weeklyDate: {
+    fontSize: 9,
+    color: '#888888',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  todayDate: {
+    color: '#FFD700',
+    fontWeight: '700',
+  },
+  goalDisplayContainer: {
+    alignItems: 'center',
+    marginBottom: 30,
+    paddingHorizontal: 20,
+  },
+  goalDisplayText: {
+    fontSize: 16,
+    color: '#BBBBBB',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  goalEditHint: {
+    fontSize: 12,
+    color: '#888888',
+    fontStyle: 'italic',
+  },
+  rankBox: {
+    marginHorizontal: 20,
+    borderRadius: 16,
+    marginBottom: 20,
+  },
+  rankBoxGradient: {
+    padding: 20,
+    borderRadius: 16,
+  },
+  rankContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rankInfo: {
+    flex: 1,
+  },
+  rankLabel: {
+    color: '#BBBBBB',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  rankNumber: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 22,
+    marginTop: 4,
+  },
+  rankSteps: {
+    color: '#888888',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  rankArrow: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(139,195,74,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
