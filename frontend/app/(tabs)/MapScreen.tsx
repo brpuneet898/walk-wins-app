@@ -7,6 +7,7 @@ import { useSteps } from '../../context/StepContext';
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function MapScreen() {
   const [ready, setReady] = useState(false);
@@ -322,7 +323,8 @@ Track your steps with WalkWins! 📱`;
         style={styles.screenshotButton} 
         onPress={takeScreenshotAndShare}
       >
-        <Text style={styles.screenshotText}>�</Text>
+        {/* <Text style={styles.screenshotText}>�</Text> */}
+        <Ionicons name="camera-outline" size={26} color="#fff" />
       </TouchableOpacity>
 
       {/* Existing Locator Button */}
@@ -333,7 +335,8 @@ Track your steps with WalkWins! 📱`;
           sendLocate();
         }}
       >
-        <Text style={styles.locatorText}>◎</Text>
+        {/* <Text style={styles.locatorText}>◎</Text> */}
+        <Ionicons name="locate" size={28} color="#fff" />
       </TouchableOpacity>
 
       {!ready && <Text style={styles.loadingText}>Loading map…</Text>}
@@ -376,7 +379,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#2196F3',
+    backgroundColor: '#000000ff',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
