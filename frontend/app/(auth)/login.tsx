@@ -1,13 +1,16 @@
 import React, { useState, useEffect, memo } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+// @ts-ignore - firebaseConfig is a JS file without types, import may be implicitly any
 import { auth } from '../../firebaseConfig';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 // Make sure Animated is imported from reanimated
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, withRepeat, withSequence } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withRepeat, withSequence, Easing } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
+import { Colors } from '../../constants/Colors';
+import { useColorScheme } from '../../hooks/useColorScheme';
 // --- START: Import react-native-svg ---
 // Make sure you have installed this package by running: npx expo install react-native-svg
 import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Path } from 'react-native-svg';
@@ -17,10 +20,10 @@ import Svg, { Defs, LinearGradient as SvgLinearGradient, Stop, Path } from 'reac
 const Logo = ({ width = 40, height = 40 }) => (
     <Svg width={width} height={height} viewBox="0 0 24 24" fill="none">
         <Defs>
-            <SvgLinearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <Stop offset="0%" stopColor="#00C6FF" />
-                <Stop offset="100%" stopColor="#0072FF" />
-            </SvgLinearGradient>
+      <SvgLinearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <Stop offset="0%" stopColor="#8BC34A" />
+        <Stop offset="100%" stopColor="#6FAF2D" />
+      </SvgLinearGradient>
         </Defs>
         <Path d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2Z" stroke="url(#logoGradient)" strokeWidth="1.5"/>
         <Path d="M15.5 10.5C15.5 11.3284 14.8284 12 14 12C13.1716 12 12.5 11.3284 12.5 10.5C12.5 9.67157 13.1716 9 14 9C14.8284 9 15.5 9.67157 15.5 10.5Z" fill="url(#logoGradient)"/>
@@ -29,69 +32,95 @@ const Logo = ({ width = 40, height = 40 }) => (
 );
 // --- END: New Logo Component ---
 
-const AnimatedBackground = memo(() => {
-  const translateX1 = useSharedValue(0);
-  const translateY1 = useSharedValue(0);
-  const translateX2 = useSharedValue(0);
-  const translateY2 = useSharedValue(0);
+const AnimatedBackground = () => {
+  const scale1 = useSharedValue(1);
+  const scale2 = useSharedValue(1);
+  const opacity1 = useSharedValue(0.3);
+  const opacity2 = useSharedValue(0.3);
 
   useEffect(() => {
-    const duration1 = 2500;
-    const duration2 = 3000;
-    translateX1.value = withRepeat(withSequence(withTiming(20, { duration: duration1 }), withTiming(-20, { duration: duration1 })), -1, true);
-    translateY1.value = withRepeat(withSequence(withTiming(20, { duration: duration1 + 500 }), withTiming(-20, { duration: duration1 + 500 })), -1, true);
-    translateX2.value = withRepeat(withSequence(withTiming(-20, { duration: duration2 }), withTiming(20, { duration: duration2 })), -1, true);
-    translateY2.value = withRepeat(withSequence(withTiming(-20, { duration: duration2 + 500 }), withTiming(20, { duration: duration2 + 500 })), -1, true);
+    scale1.value = withRepeat(
+      withTiming(1.1, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true
+    );
+    scale2.value = withRepeat(
+      withTiming(1.1, { duration: 4000, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true
+    );
+    opacity1.value = withRepeat(
+      withTiming(0.6, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true
+    );
+    opacity2.value = withRepeat(
+      withTiming(0.6, { duration: 4000, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true
+    );
   }, []);
 
   const animatedStyle1 = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX1.value }, { translateY: translateY1.value }],
+    transform: [{ scale: scale1.value }],
+    opacity: opacity1.value,
   }));
+
   const animatedStyle2 = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX2.value }, { translateY: translateY2.value }],
+    transform: [{ scale: scale2.value }],
+    opacity: opacity2.value,
   }));
 
   return (
-    <View style={StyleSheet.absoluteFillObject}>
-      <Animated.View style={[styles.bgCircle, styles.circle1Layer1, animatedStyle1]}>
-        {[...Array(15)].map((_, i) => (
-          <View key={i} style={[styles.bgCircle, styles[`circle1Layer${i + 2}`]]} />
-        ))}
-      </Animated.View>
-      <Animated.View style={[styles.bgCircle, styles.circle2Layer1, animatedStyle2]}>
-        {[...Array(15)].map((_, i) => (
-          <View key={i} style={[styles.bgCircle, styles[`circle2Layer${i + 2}`]]} />
-        ))}
-      </Animated.View>
+    <View style={styles.backgroundContainer} pointerEvents="none">
+      <Animated.View style={[styles.circle1, animatedStyle1]} />
+      <Animated.View style={[styles.circle2, animatedStyle2]} />
     </View>
   );
-});
+};
 
-const GradientText = memo((props) => {
+const GradientText = memo((props: any) => {
   return (
     <MaskedView maskElement={<Text {...props} />}>
       <LinearGradient
-        colors={['#00c6ff', '#0072ff']}
+  // tuned gradient: slightly darker -> brighter -> deeper green for stronger contrast
+  colors={['#5EA02A', '#8BC34A', '#4CAF50']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
       >
-        <Text {...props} style={[props.style, { opacity: 0 }]} />
+  <Text {...props} style={[props.style, { opacity: 0 }]} />
       </LinearGradient>
     </MaskedView>
   );
 });
 
-const BrandGradientButton = memo(({ onPress, text }) => (
-    <Pressable onPress={onPress}>
+// Animated Brand button with subtle press scale
+const BrandGradientButton = memo(({ onPress, text }: any) => {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Pressable
+      onPressIn={() => { scale.value = withTiming(0.97, { duration: 120 }); }}
+      onPressOut={() => { scale.value = withTiming(1, { duration: 160 }); }}
+      onPress={onPress}
+      style={{ alignSelf: 'stretch' }}
+    >
+      <Animated.View style={[animatedStyle]}>
         <LinearGradient
-            colors={['#00c6ff', '#0072ff']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.button}>
-            <Text style={styles.buttonText}>{text}</Text>
+          colors={['#6FAF2D', '#8BC34A', '#4CAF50']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.button}
+        >
+          <Text style={styles.buttonText}>{text}</Text>
         </LinearGradient>
+      </Animated.View>
     </Pressable>
-));
+  );
+});
 
 
 export default function Login() {
@@ -99,13 +128,16 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const router = useRouter();
+  const colorScheme = useColorScheme();
+  const theme = Colors[colorScheme === 'light' ? 'light' : 'dark'];
 
   const handleLogin = async () => {
     if (!email || !password) {
         return Alert.alert('Error', 'Please enter both email and password.');
     }
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+  // @ts-ignore - auth is imported from a JS config file
+  await signInWithEmailAndPassword(auth, email, password);
     } catch (error) {
       Alert.alert('Login Failed', 'Please check your email and password.');
       console.error(error);
@@ -116,9 +148,9 @@ export default function Login() {
   const isPasswordFocused = useSharedValue(false);
 
   const emailContainerAnimatedStyle = useAnimatedStyle(() => {
-    const borderColor = withTiming(isEmailFocused.value ? '#00c6ff' : '#4B5563', { duration: 200 });
-    const shadowOpacity = withTiming(isEmailFocused.value ? 0.5 : 0, { duration: 200 });
-    const shadowRadius = withTiming(isEmailFocused.value ? 5 : 0, { duration: 200 });
+  const borderColor = withTiming(isEmailFocused.value ? '#8BC34A' : '#4B5563', { duration: 200 });
+  const shadowOpacity = withTiming(isEmailFocused.value ? 0.45 : 0, { duration: 200 });
+  const shadowRadius = withTiming(isEmailFocused.value ? 6 : 0, { duration: 200 });
     return {
       borderColor,
       shadowOpacity,
@@ -128,9 +160,9 @@ export default function Login() {
   });
 
   const passwordContainerAnimatedStyle = useAnimatedStyle(() => {
-    const borderColor = withTiming(isPasswordFocused.value ? '#00c6ff' : '#4B5563', { duration: 200 });
-    const shadowOpacity = withTiming(isPasswordFocused.value ? 0.5 : 0, { duration: 200 });
-    const shadowRadius = withTiming(isPasswordFocused.value ? 5 : 0, { duration: 200 });
+  const borderColor = withTiming(isPasswordFocused.value ? '#8BC34A' : '#4B5563', { duration: 200 });
+  const shadowOpacity = withTiming(isPasswordFocused.value ? 0.45 : 0, { duration: 200 });
+  const shadowRadius = withTiming(isPasswordFocused.value ? 6 : 0, { duration: 200 });
     return {
       borderColor,
       shadowOpacity,
@@ -140,25 +172,26 @@ export default function Login() {
   });
 
   return (
-    <View style={styles.container}>
-      <AnimatedBackground />
-      
-      <View style={styles.card}>
+    <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); isEmailFocused.value = false; isPasswordFocused.value = false; }}>
+      <LinearGradient colors={['#0D1B2A', '#1B263B', '#415A77']} style={styles.container}>
+        <AnimatedBackground />
+        
+        <View style={[styles.card, { backgroundColor: 'rgba(31, 41, 55, 0.8)', borderColor: 'rgba(55, 65, 81, 0.7)' }]}>
         {/* --- START: Updated Title with Logo --- */}
         <View style={styles.titleContainer}>
           <Logo />
           <GradientText style={styles.title}>WalkWins</GradientText>
         </View>
         {/* --- END: Updated Title with Logo --- */}
-        <Text style={styles.subtitle}>Welcome back! Let's get moving.</Text>
+  <Text style={[styles.subtitle, { color: theme.text }]}>Welcome back! Let's get moving.</Text>
         
-        <Text style={styles.label}>Email</Text>
+        <Text style={[styles.label, { color: theme.text }]}>Email</Text>
         <Animated.View style={[styles.inputContainer, emailContainerAnimatedStyle]}>
-          <Ionicons name="mail" size={20} color="#6B7280" style={styles.inputIcon} />
+          <Ionicons name="mail" size={20} color={theme.icon} style={styles.inputIcon} />
           <TextInput
-            style={styles.inputField}
+            style={[styles.inputField, { color: theme.text }]}
             placeholder=""
-            placeholderTextColor="#6B7280"
+            placeholderTextColor={theme.icon}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -168,13 +201,13 @@ export default function Login() {
           />
         </Animated.View>
 
-        <Text style={styles.label}>Password</Text>
+        <Text style={[styles.label, { color: theme.text }]}>Password</Text>
         <Animated.View style={[styles.inputContainer, passwordContainerAnimatedStyle]}>
-          <Ionicons name="lock-closed" size={20} color="#6B7280" style={styles.inputIcon} />
+          <Ionicons name="lock-closed" size={20} color={theme.icon} style={styles.inputIcon} />
           <TextInput
-            style={styles.inputField}
+            style={[styles.inputField, { color: theme.text }]}
             placeholder=""
-            placeholderTextColor="#6B7280"
+            placeholderTextColor={theme.icon}
             value={password}
             onChangeText={setPassword}
             secureTextEntry={!isPasswordVisible}
@@ -182,17 +215,18 @@ export default function Login() {
             onBlur={() => { isPasswordFocused.value = false; }}
           />
           <Pressable onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-            <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color="#6B7280" style={styles.iconToggle} />
+            <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color={theme.icon} style={styles.iconToggle} />
           </Pressable>
         </Animated.View>
 
         <BrandGradientButton onPress={handleLogin} text="Login" />
 
         <Pressable onPress={() => router.push('/signup')}>
-          <Text style={styles.linkText}>Don't have an account? <Text style={styles.linkHighlight}>Sign up now</Text></Text>
+      <Text style={[styles.linkText, { color: theme.text }]}>Don't have an account? <Text style={[styles.linkHighlight, { color: '#8BC34A' }]}>Sign up now</Text></Text>
         </Pressable>
       </View>
-    </View>
+      </LinearGradient>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -243,7 +277,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderRadius: 8,
         marginBottom: 20,
-        shadowColor: '#00c6ff',
+  shadowColor: '#8BC34A',
         shadowOffset: { width: 0, height: 0 },
     },
     inputIcon: {
@@ -279,40 +313,30 @@ const styles = StyleSheet.create({
         color: '#00c6ff',
         fontWeight: '600',
     },
-    bgCircle: {
-      position: 'absolute',
-      borderRadius: 9999,
-    },
-    circle1Layer1: { top: -170, left: -170, width: 340, height: 340, backgroundColor: 'rgba(0, 198, 255, 0.01)' },
-    circle1Layer2: { top: 5, left: 5, width: 330, height: 330, backgroundColor: 'rgba(0, 198, 255, 0.01)' },
-    circle1Layer3: { top: 10, left: 10, width: 320, height: 320, backgroundColor: 'rgba(0, 198, 255, 0.01)' },
-    circle1Layer4: { top: 15, left: 15, width: 310, height: 310, backgroundColor: 'rgba(0, 198, 255, 0.02)' },
-    circle1Layer5: { top: 20, left: 20, width: 300, height: 300, backgroundColor: 'rgba(0, 198, 255, 0.02)' },
-    circle1Layer6: { top: 25, left: 25, width: 290, height: 290, backgroundColor: 'rgba(0, 198, 255, 0.02)' },
-    circle1Layer7: { top: 30, left: 30, width: 280, height: 280, backgroundColor: 'rgba(0, 198, 255, 0.03)' },
-    circle1Layer8: { top: 35, left: 35, width: 270, height: 270, backgroundColor: 'rgba(0, 198, 255, 0.03)' },
-    circle1Layer9: { top: 40, left: 40, width: 260, height: 260, backgroundColor: 'rgba(0, 198, 255, 0.03)' },
-    circle1Layer10: { top: 45, left: 45, width: 250, height: 250, backgroundColor: 'rgba(0, 198, 255, 0.04)' },
-    circle1Layer11: { top: 50, left: 50, width: 240, height: 240, backgroundColor: 'rgba(0, 198, 255, 0.04)' },
-    circle1Layer12: { top: 55, left: 55, width: 230, height: 230, backgroundColor: 'rgba(0, 198, 255, 0.04)' },
-    circle1Layer13: { top: 60, left: 60, width: 220, height: 220, backgroundColor: 'rgba(0, 198, 255, 0.05)' },
-    circle1Layer14: { top: 65, left: 65, width: 210, height: 210, backgroundColor: 'rgba(0, 198, 255, 0.05)' },
-    circle1Layer15: { top: 70, left: 70, width: 200, height: 200, backgroundColor: 'rgba(0, 198, 255, 0.06)' },
-    circle1Layer16: { top: 75, left: 75, width: 190, height: 190, backgroundColor: 'rgba(0, 198, 255, 0.07)' },
-    circle2Layer1: { bottom: -190, right: -190, width: 380, height: 380, backgroundColor: 'rgba(0, 114, 255, 0.01)' },
-    circle2Layer2: { top: 5, left: 5, width: 370, height: 370, backgroundColor: 'rgba(0, 114, 255, 0.01)' },
-    circle2Layer3: { top: 10, left: 10, width: 360, height: 360, backgroundColor: 'rgba(0, 114, 255, 0.01)' },
-    circle2Layer4: { top: 15, left: 15, width: 350, height: 350, backgroundColor: 'rgba(0, 114, 255, 0.02)' },
-    circle2Layer5: { top: 20, left: 20, width: 340, height: 340, backgroundColor: 'rgba(0, 114, 255, 0.02)' },
-    circle2Layer6: { top: 25, left: 25, width: 330, height: 330, backgroundColor: 'rgba(0, 114, 255, 0.02)' },
-    circle2Layer7: { top: 30, left: 30, width: 320, height: 320, backgroundColor: 'rgba(0, 114, 255, 0.03)' },
-    circle2Layer8: { top: 35, left: 35, width: 310, height: 310, backgroundColor: 'rgba(0, 114, 255, 0.03)' },
-    circle2Layer9: { top: 40, left: 40, width: 300, height: 300, backgroundColor: 'rgba(0, 114, 255, 0.03)' },
-    circle2Layer10: { top: 45, left: 45, width: 290, height: 290, backgroundColor: 'rgba(0, 114, 255, 0.04)' },
-    circle2Layer11: { top: 50, left: 50, width: 280, height: 280, backgroundColor: 'rgba(0, 114, 255, 0.04)' },
-    circle2Layer12: { top: 55, left: 55, width: 270, height: 270, backgroundColor: 'rgba(0, 114, 255, 0.04)' },
-    circle2Layer13: { top: 60, left: 60, width: 260, height: 260, backgroundColor: 'rgba(0, 114, 255, 0.05)' },
-    circle2Layer14: { top: 65, left: 65, width: 250, height: 250, backgroundColor: 'rgba(0, 114, 255, 0.05)' },
-    circle2Layer15: { top: 70, left: 70, width: 240, height: 240, backgroundColor: 'rgba(0, 114, 255, 0.06)' },
-    circle2Layer16: { top: 75, left: 75, width: 230, height: 230, backgroundColor: 'rgba(0, 114, 255, 0.07)' },
+    backgroundContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0,
+  },
+  circle1: {
+    position: 'absolute',
+    top: -80,
+    left: -80,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: '#8BC34A',
+  },
+  circle2: {
+    position: 'absolute',
+    bottom: -100,
+    right: -100,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: '#4CAF50',
+  },
 });

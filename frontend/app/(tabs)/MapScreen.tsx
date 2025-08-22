@@ -1,15 +1,103 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, Platform, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Platform, Text, TouchableOpacity, Alert, Share } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSteps } from '../../context/StepContext';
+import { captureRef } from 'react-native-view-shot';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
 
 export default function MapScreen() {
   const [ready, setReady] = useState(false);
-  const [isTracking, setIsTracking] = useState(false); // 👈 ADD: Tracking state
+  const [isTracking, setIsTracking] = useState(false);
+  const [todaysSteps, setTodaysSteps] = useState(0);
+  const [viewReady, setViewReady] = useState(false);
   const webRef = useRef<WebView | null>(null);
+  const mapContainerRef = useRef<View | null>(null);
   const queueRef = useRef<string[]>([]);
   const subscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const centeredRef = useRef(false);
+  const { lifetimeSteps } = useSteps();
+
+  // Add effect to ensure view is ready
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setViewReady(true);
+    }, 2000); // Wait 2 seconds for view to be fully rendered
+    
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Function to get local date string
+  const getLocalDateString = (date = new Date()) => {
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Load today's steps
+  useEffect(() => {
+    const loadTodaysSteps = async () => {
+      try {
+        const today = getLocalDateString();
+        const storedData = await AsyncStorage.getItem(`dailySteps_${today}`);
+        const steps = storedData ? parseInt(storedData, 10) : 0;
+        setTodaysSteps(steps);
+      } catch (error) {
+        console.error('Error loading today\'s steps:', error);
+      }
+    };
+
+    loadTodaysSteps();
+    // Update steps every 10 seconds when on map screen
+    const interval = setInterval(loadTodaysSteps, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Screenshot and share functionality - NEW APPROACH
+  const takeScreenshotAndShare = async () => {
+    console.log('Screenshot button pressed!');
+    
+    try {
+      // Create a simple data card instead of trying to capture WebView
+      const message = `🚶‍♂️ Check out my walking achievement! 
+
+📊 Today's Steps: ${todaysSteps.toLocaleString()}
+🏆 Lifetime Total: ${lifetimeSteps.toLocaleString()} steps
+💰 Total Earned: ₹${(lifetimeSteps * 0.01).toFixed(2)}
+${isTracking ? '� Currently tracking my route!' : '⭕ Not tracking at the moment'}
+
+Can you beat me? 💪
+
+Track your steps with WalkWins! 📱`;
+
+      // Share the data directly
+      const result = await Share.share({
+        message: message,
+        title: 'My Walking Stats',
+      }, {
+        dialogTitle: 'Share Your Walking Achievement',
+        subject: 'Check out my walking progress!',
+      });
+
+      if (result.action === Share.sharedAction) {
+        console.log('Successfully shared walking stats!');
+        Alert.alert(
+          'Shared Successfully! 🎉', 
+          'Your walking achievement has been shared! Screenshot feature coming in future updates.',
+          [{ text: 'Awesome!' }]
+        );
+      } else if (result.action === Share.dismissedAction) {
+        console.log('Share dismissed');
+      }
+        
+    } catch (error) {
+      console.error('Error sharing:', error);
+      Alert.alert('Error', 'Failed to share. Please try again.');
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -25,7 +113,7 @@ export default function MapScreen() {
           const msg = JSON.stringify({
             type: 'location',
             coords: { lat: loc.coords.latitude, lng: loc.coords.longitude },
-            tracking: isTracking, // 👈 ADD: Include tracking state
+            tracking: isTracking,
           });
 
           if (ready) {
@@ -41,7 +129,7 @@ export default function MapScreen() {
       if (subscriptionRef.current) subscriptionRef.current.remove();
       queueRef.current = [];
     };
-  }, [ready, isTracking]); // 👈 ADD: isTracking dependency
+  }, [ready, isTracking]);
 
   // send a locate message (centers map). queued if webview not ready.
   const sendLocate = async (lat?: number, lng?: number) => {
@@ -174,7 +262,7 @@ export default function MapScreen() {
   `;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} ref={mapContainerRef}>
       <WebView
         ref={webRef}
         originWhitelist={['*']}
@@ -216,7 +304,7 @@ export default function MapScreen() {
         }}
       />
 
-      {/* 👈 ADD: Start/Stop Tracking Button */}
+      {/* Start/Stop Tracking Button */}
       <TouchableOpacity
         style={[
           styles.trackingButton,
@@ -227,6 +315,14 @@ export default function MapScreen() {
         <Text style={styles.trackingText}>
           {isTracking ? 'E' : 'S'}
         </Text>
+      </TouchableOpacity>
+
+      {/* Share Button */}
+      <TouchableOpacity 
+        style={styles.screenshotButton} 
+        onPress={takeScreenshotAndShare}
+      >
+        <Text style={styles.screenshotText}>�</Text>
       </TouchableOpacity>
 
       {/* Existing Locator Button */}
@@ -270,6 +366,27 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 20,
     fontWeight: '900',
+  },
+  
+  // Share Button
+  screenshotButton: {
+    position: 'absolute',
+    right: 18,
+    top: 60,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#2196F3',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  screenshotText: {
+    fontSize: 24,
   },
   
   // Existing Locator Button (positioned on right)
