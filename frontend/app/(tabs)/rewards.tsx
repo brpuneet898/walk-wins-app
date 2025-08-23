@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useSteps } from '../../context/StepContext';
 import Animated, {
@@ -11,6 +11,7 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { IconSymbol } from '@/components/ui/IconSymbol';
+import { calculateTotalEarnings } from '../../utils/earnings';
 
 // --- START: GradientText Component ---
 const GradientText = (props: any) => (
@@ -92,7 +93,7 @@ const AnimatedBackground = () => {
 };
 
 export default function RewardsScreen() {
-  const { coins = 0, lifetimeSteps = 0 } = useSteps() as any;
+  const { coins = 0, lifetimeSteps = 0, boostSteps = 0 } = useSteps() as any;
 
   return (
     <LinearGradient
@@ -109,7 +110,7 @@ export default function RewardsScreen() {
           <IconSymbol name="gift.fill" size={40} color="#FFD700" />
           <Text style={styles.pointsLabel}>Your Total Earnings</Text>
           <GradientText style={styles.pointsText}>
-            ₹{((lifetimeSteps * 0.01) + coins).toFixed(2)}
+            ₹{calculateTotalEarnings(lifetimeSteps, coins, boostSteps).toFixed(2)}
           </GradientText>
           <Text style={styles.pointsSubtext}>From walking & challenges</Text>
         </View>
