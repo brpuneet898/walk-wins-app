@@ -14,6 +14,7 @@ export interface LeaderboardEntry {
   rank: number;
   username: string;
   steps: number;
+  userId?: string; // Add optional userId field
 }
 
 // The final, correct shape of our context data

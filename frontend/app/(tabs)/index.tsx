@@ -151,7 +151,7 @@ export default function HomeScreen() {
   const [userRank, setUserRank] = useState<number | null>(null);
   const [weeklyData, setWeeklyData] = useState<WeeklyDay[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null); // 👈 ADD: User profile state
-  const { isLoggingOut, isBoostActive, boostType, coins, lifetimeSteps, boostSteps: ctxBoostSteps = 0, setBoostSteps } = useSteps() as any;
+  const { isLoggingOut, isBoostActive, boostType, coins, lifetimeSteps, boostSteps: ctxBoostSteps = 0, setBoostSteps, leaderboardData } = useSteps() as any;
   const router = useRouter();
   const isSyncing = useRef(false);
   const lastStepValueFromListener = useRef(0);
@@ -194,8 +194,12 @@ export default function HomeScreen() {
           setUserProfile(userDoc.data());
         }
       }
-    } catch (error) {
-      console.error('Error fetching user profile:', error);
+    } catch (error: any) {
+      if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
+        console.log('[PROFILE] App is offline - using cached profile data');
+      } else {
+        console.error('Error fetching user profile:', error);
+      }
     }
   };
 
@@ -238,50 +242,37 @@ export default function HomeScreen() {
       }
       
       setWeeklyData(weekData);
-    } catch (error) {
-      console.error('Error fetching weekly data:', error);
+    } catch (error: any) {
+      if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
+        console.log('[WEEKLY] App is offline - using cached weekly data');
+      } else {
+        console.error('Error fetching weekly data:', error);
+      }
     }
   };
 
-  const fetchUserRank = async () => {
+  const getUserRankFromLeaderboard = () => {
     try {
-  const currentUser = currentAuth.currentUser;
-      if (!currentUser) return;
-
-      const todayString = getLocalDateString();
-      
-      // Get all users' daily steps for today
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      const userStepsData = [];
-
-      for (const userDoc of usersSnapshot.docs) {
-        const userId = userDoc.id;
-        const dailyStepsRef = doc(db, `users/${userId}/dailySteps`, todayString);
-        const dailyStepsSnap = await getDoc(dailyStepsRef);
-        
-        if (dailyStepsSnap.exists()) {
-          userStepsData.push({
-            userId,
-            steps: dailyStepsSnap.data().steps || 0
-          });
-        } else {
-          userStepsData.push({
-            userId,
-            steps: 0
-          });
-        }
+      const currentUser = currentAuth.currentUser;
+      if (!currentUser || !leaderboardData || leaderboardData.length === 0) {
+        setUserRank(null);
+        return;
       }
 
-      // Sort by steps in descending order
-      userStepsData.sort((a, b) => b.steps - a.steps);
+      // Find the current user in the leaderboard data by userId
+      const userEntry = leaderboardData.find((entry: any) => {
+        return entry.userId === currentUser.uid;
+      });
 
-      // Find current user's rank
-      const userRankIndex = userStepsData.findIndex(user => user.userId === currentUser.uid);
-      if (userRankIndex !== -1) {
-        setUserRank(userRankIndex + 1);
+      if (userEntry) {
+        setUserRank(userEntry.rank);
+      } else {
+        // User not found in leaderboard
+        setUserRank(null);
       }
     } catch (error) {
-      console.error('Error fetching user rank:', error);
+      console.error('Error getting user rank from leaderboard:', error);
+      setUserRank(null);
     }
   };
 
@@ -334,11 +325,16 @@ export default function HomeScreen() {
         }
 
         // Fetch updated rank and weekly data after syncing
-        await fetchUserRank();
+        getUserRankFromLeaderboard();
         await fetchWeeklyData();
       }
-    } catch (error) {
-      console.error('[SYNC] Error:', error);
+    } catch (error: any) {
+      // Handle Firebase offline errors gracefully
+      if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
+        console.log('[SYNC] App is offline - will retry when connection is restored');
+      } else {
+        console.error('[SYNC] Error:', error);
+      }
     } finally {
       isSyncing.current = false;
     }
@@ -373,7 +369,7 @@ export default function HomeScreen() {
 
       // Fetch initial data
   await fetchUserProfile(); // 👈 ADD: Fetch user profile
-  await fetchUserRank();
+  getUserRankFromLeaderboard();
   await fetchWeeklyData();
 
       const startOfToday = new Date();
@@ -455,6 +451,11 @@ export default function HomeScreen() {
     return () => clearInterval(goalUpdateInterval);
   }, [dailyStepGoal]);
 
+  // Update rank when leaderboard data changes
+  useEffect(() => {
+    getUserRankFromLeaderboard();
+  }, [leaderboardData]);
+
   // Update weekly data when today's steps change
   useEffect(() => {
     if (weeklyData.length > 0) {
@@ -502,8 +503,13 @@ export default function HomeScreen() {
         }
       }
       await AsyncStorage.setItem('lastSyncDate', todayString);
-    } catch (error) {
-      console.error('Error finalizing previous day:', error);
+    } catch (error: any) {
+      // Handle Firebase offline errors gracefully
+      if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
+        console.log('[FINALIZE] App is offline - will retry finalizing when connection is restored');
+      } else {
+        console.error('Error finalizing previous day:', error);
+      }
     } finally {
       isSyncing.current = false;
     }
@@ -663,7 +669,7 @@ export default function HomeScreen() {
                 <View style={styles.rankInfo}>
                   <Text style={styles.rankLabel}>🏆 Your Rank</Text>
                   <Text style={styles.rankNumber}>
-                    {userRank ? `# ${userRank}` : '# —'}
+                    {userRank ? `# ${userRank}` : '# _'}
                   </Text>
                   <Text style={styles.rankSteps}>{formattedStepCount} steps today</Text>
                 </View>
