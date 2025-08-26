@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, AppState, ScrollView } from 'react-native';
 import { Pedometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// @ts-ignore - firebaseConfig is a JS module without TS types
 import { auth, db } from '../../firebaseConfig';
 import { doc, getDoc, setDoc, updateDoc, increment, collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { useSteps } from '../../context/StepContext';
@@ -16,6 +17,14 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { Svg, Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
+// --- Types ---
+type WeeklyDay = {
+  dayLabel: string;
+  date: string;
+  steps: number;
+  goal: number;
+  isToday: boolean;
+};
 import { LinearGradient } from 'expo-linear-gradient';
 
 const getLocalDateString = (date = new Date()) => {
@@ -25,20 +34,7 @@ const getLocalDateString = (date = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
-// Shared coin calculation logic - same as in coin.tsx with proper error handling
-const calculateTotalEarnings = (lifetimeSteps = 0, coins = 0) => {
-  const pricePerStep = 0.01;
-  
-  // Ensure we have valid numbers
-  const validLifetimeSteps = Number(lifetimeSteps) || 0;
-  const validCoins = Number(coins) || 0;
-  
-  const stepEarnings = validLifetimeSteps * pricePerStep;
-  const totalEarned = stepEarnings + validCoins;
-  
-  // Return 0 if result is NaN or negative
-  return isNaN(totalEarned) || totalEarned < 0 ? 0 : totalEarned;
-};
+import { calculateTotalEarnings } from '../../utils/earnings';
 
 const AnimatedBackground = () => {
   const scale1 = useSharedValue(1);
@@ -88,7 +84,14 @@ const AnimatedBackground = () => {
 };
 
 // Weekly Progress Circle Component
-const WeeklyProgressCircle = ({ dayLabel, date, steps, goal, isToday }) => {
+type WeeklyProgressCircleProps = {
+  dayLabel: string;
+  date: string;
+  steps: number;
+  goal: number;
+  isToday: boolean;
+};
+const WeeklyProgressCircle = ({ dayLabel, date, steps, goal, isToday }: WeeklyProgressCircleProps) => {
   const progress = Math.min((steps / goal) * 100, 100);
   const radius = 18;
   const strokeWidth = 3;
@@ -144,18 +147,25 @@ const WeeklyProgressCircle = ({ dayLabel, date, steps, goal, isToday }) => {
 export default function HomeScreen() {
   const [todaysSteps, setTodaysSteps] = useState(0);
   const [isPedometerAvailable, setIsPedometerAvailable] = useState(false);
-  const [dailyStepGoal, setDailyStepGoal] = useState(3000);
-  const [userRank, setUserRank] = useState(null);
-  const [weeklyData, setWeeklyData] = useState([]);
-  const [userProfile, setUserProfile] = useState(null); // 👈 ADD: User profile state
-  const { isLoggingOut, isBoostActive, boostType, coins, lifetimeSteps } = useSteps();
+  const [dailyStepGoal, setDailyStepGoal] = useState<number>(3000);
+  const [userRank, setUserRank] = useState<number | null>(null);
+  const [weeklyData, setWeeklyData] = useState<WeeklyDay[]>([]);
+  const [userProfile, setUserProfile] = useState<any>(null); // 👈 ADD: User profile state
+  const { isLoggingOut, isBoostActive, boostType, coins, lifetimeSteps, boostSteps: ctxBoostSteps = 0, setBoostSteps, leaderboardData } = useSteps() as any;
   const router = useRouter();
   const isSyncing = useRef(false);
   const lastStepValueFromListener = useRef(0);
+  const boostStepsRef = useRef(0); // accumulate steps that occur during boost windows
   const isInitialized = useRef(false);
 
   const coinScale = useSharedValue(1);
-  const user = auth.currentUser; // 👈 ADD: Get current user
+  // @ts-ignore
+  const currentAuth = auth as any;
+  // @ts-ignore
+  const currentDb = db as any;
+  const user = currentAuth.currentUser; // 👈 ADD: Get current user
+
+  const { boostSteps = 0 } = useSteps() as any;
 
   // 👈 ADD: Function to get user initial
   const getUserInitial = () => {
@@ -170,28 +180,33 @@ export default function HomeScreen() {
     return null;
   };
 
-  // Calculate total earnings using the same logic as coin.tsx
-  const totalEarnings = calculateTotalEarnings(lifetimeSteps, coins);
+  const totalEarnings = calculateTotalEarnings(lifetimeSteps, coins, boostSteps);
+
+  // boostSteps now comes from StepContext (real-time via onSnapshot)
 
   // 👈 ADD: Fetch user profile data
   const fetchUserProfile = async () => {
     try {
-      const currentUser = auth.currentUser;
+  const currentUser = currentAuth.currentUser;
       if (currentUser) {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
           setUserProfile(userDoc.data());
         }
       }
-    } catch (error) {
-      console.error('Error fetching user profile:', error);
+    } catch (error: any) {
+      if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
+        console.log('[PROFILE] App is offline - using cached profile data');
+      } else {
+        console.error('Error fetching user profile:', error);
+      }
     }
   };
 
   // Fetch weekly data
   const fetchWeeklyData = async () => {
     try {
-      const currentUser = auth.currentUser;
+  const currentUser = currentAuth.currentUser;
       if (!currentUser) return;
 
       const today = new Date();
@@ -227,50 +242,37 @@ export default function HomeScreen() {
       }
       
       setWeeklyData(weekData);
-    } catch (error) {
-      console.error('Error fetching weekly data:', error);
+    } catch (error: any) {
+      if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
+        console.log('[WEEKLY] App is offline - using cached weekly data');
+      } else {
+        console.error('Error fetching weekly data:', error);
+      }
     }
   };
 
-  const fetchUserRank = async () => {
+  const getUserRankFromLeaderboard = () => {
     try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
-
-      const todayString = getLocalDateString();
-      
-      // Get all users' daily steps for today
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      const userStepsData = [];
-
-      for (const userDoc of usersSnapshot.docs) {
-        const userId = userDoc.id;
-        const dailyStepsRef = doc(db, `users/${userId}/dailySteps`, todayString);
-        const dailyStepsSnap = await getDoc(dailyStepsRef);
-        
-        if (dailyStepsSnap.exists()) {
-          userStepsData.push({
-            userId,
-            steps: dailyStepsSnap.data().steps || 0
-          });
-        } else {
-          userStepsData.push({
-            userId,
-            steps: 0
-          });
-        }
+      const currentUser = currentAuth.currentUser;
+      if (!currentUser || !leaderboardData || leaderboardData.length === 0) {
+        setUserRank(null);
+        return;
       }
 
-      // Sort by steps in descending order
-      userStepsData.sort((a, b) => b.steps - a.steps);
+      // Find the current user in the leaderboard data by userId
+      const userEntry = leaderboardData.find((entry: any) => {
+        return entry.userId === currentUser.uid;
+      });
 
-      // Find current user's rank
-      const userRankIndex = userStepsData.findIndex(user => user.userId === currentUser.uid);
-      if (userRankIndex !== -1) {
-        setUserRank(userRankIndex + 1);
+      if (userEntry) {
+        setUserRank(userEntry.rank);
+      } else {
+        // User not found in leaderboard
+        setUserRank(null);
       }
     } catch (error) {
-      console.error('Error fetching user rank:', error);
+      console.error('Error getting user rank from leaderboard:', error);
+      setUserRank(null);
     }
   };
 
@@ -288,7 +290,7 @@ export default function HomeScreen() {
     if (isSyncing.current) return;
     isSyncing.current = true;
     try {
-      const currentUser = auth.currentUser;
+  const currentUser = currentAuth.currentUser;
       if (!currentUser) return;
       const todayString = getLocalDateString();
       const storedSteps = await AsyncStorage.getItem(`dailySteps_${todayString}`);
@@ -302,20 +304,45 @@ export default function HomeScreen() {
       if (incrementAmount > 0) {
         await setDoc(dailyDocRef, { steps: currentStepCount });
         await updateDoc(userDocRef, { lifetimeTotalSteps: increment(incrementAmount) });
+
+        // Also sync any boosted steps accumulated locally for today
+        try {
+          const storedBoost = await AsyncStorage.getItem(`dailyBoostSteps_${todayString}`);
+          const boostCount = storedBoost ? parseInt(storedBoost, 10) : 0;
+          if (boostCount > 0) {
+            // write boostSteps into the daily doc (merge)
+            await setDoc(dailyDocRef, { steps: currentStepCount, boostSteps: boostCount });
+            // increment aggregated boostSteps on user doc
+            await updateDoc(userDocRef, { boostSteps: increment(boostCount) });
+            // clear stored boost and reset local accumulator
+            await AsyncStorage.removeItem(`dailyBoostSteps_${todayString}`);
+            boostStepsRef.current = 0;
+            // also sync context value (best-effort)
+            setBoostSteps((prev: number) => Math.max((prev || 0) - boostCount, 0));
+          }
+        } catch (e) {
+          console.error('Error syncing boostSteps:', e);
+        }
+
         // Fetch updated rank and weekly data after syncing
-        await fetchUserRank();
+        getUserRankFromLeaderboard();
         await fetchWeeklyData();
       }
-    } catch (error) {
-      console.error('[SYNC] Error:', error);
+    } catch (error: any) {
+      // Handle Firebase offline errors gracefully
+      if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
+        console.log('[SYNC] App is offline - will retry when connection is restored');
+      } else {
+        console.error('[SYNC] Error:', error);
+      }
     } finally {
       isSyncing.current = false;
     }
   };
 
   useEffect(() => {
-    let subscription: Pedometer.PedometerListener | null = null;
-    let hourlySyncInterval: NodeJS.Timeout | null = null;
+  let subscription: any = null;
+  let hourlySyncInterval: ReturnType<typeof setInterval> | null = null;
 
     const init = async () => {
       const isAvailable = await Pedometer.isAvailableAsync();
@@ -327,7 +354,7 @@ export default function HomeScreen() {
       await finalizePreviousDaySteps();
 
       // Fetch daily step goal from database
-      const currentUser = auth.currentUser;
+  const currentUser = currentAuth.currentUser;
       if (currentUser) {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists() && userDoc.data().dailyStepGoal) {
@@ -341,9 +368,9 @@ export default function HomeScreen() {
       setTodaysSteps(initialTodaysSteps);
 
       // Fetch initial data
-      await fetchUserProfile(); // 👈 ADD: Fetch user profile
-      await fetchUserRank();
-      await fetchWeeklyData();
+  await fetchUserProfile(); // 👈 ADD: Fetch user profile
+  getUserRankFromLeaderboard();
+  await fetchWeeklyData();
 
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
@@ -366,9 +393,21 @@ export default function HomeScreen() {
         let incrementStep = currentListenerSteps - lastStepValueFromListener.current;
         lastStepValueFromListener.current = currentListenerSteps;
         if (incrementStep < 0) incrementStep = 0;
-        if (incrementStep > 0) {
-          setTodaysSteps(prevSteps => prevSteps + incrementStep);
-        }
+          if (incrementStep > 0) {
+            setTodaysSteps(prevSteps => prevSteps + incrementStep);
+            try {
+              // If we're in a boost window, accumulate boosted steps locally and persist to device storage
+              if (isBoostActive) {
+                boostStepsRef.current += incrementStep;
+                const todayStringLocal = getLocalDateString();
+                AsyncStorage.setItem(`dailyBoostSteps_${todayStringLocal}`, String(boostStepsRef.current));
+                // update app-wide boostSteps immediately so UI earnings reflect boosted rate right away
+                setBoostSteps((prev: number) => (Number(prev) || 0) + incrementStep);
+              }
+            } catch (e) {
+              // silent fail for AsyncStorage
+            }
+          }
       });
       hourlySyncInterval = setInterval(syncToFirebase, 3600000);
     };
@@ -393,7 +432,7 @@ export default function HomeScreen() {
   // Listen for goal changes from profile page
   useEffect(() => {
     const checkForGoalUpdates = async () => {
-      const currentUser = auth.currentUser;
+  const currentUser = currentAuth.currentUser;
       if (currentUser) {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists() && userDoc.data().dailyStepGoal) {
@@ -411,6 +450,11 @@ export default function HomeScreen() {
     
     return () => clearInterval(goalUpdateInterval);
   }, [dailyStepGoal]);
+
+  // Update rank when leaderboard data changes
+  useEffect(() => {
+    getUserRankFromLeaderboard();
+  }, [leaderboardData]);
 
   // Update weekly data when today's steps change
   useEffect(() => {
@@ -442,7 +486,7 @@ export default function HomeScreen() {
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayString = getLocalDateString(yesterday);
       if (lastSyncDate && lastSyncDate === yesterdayString) {
-        const currentUser = auth.currentUser;
+  const currentUser = currentAuth.currentUser;
         if (!currentUser) return;
         const stepsToFinalize = await AsyncStorage.getItem(`dailySteps_${lastSyncDate}`);
         const finalStepCount = stepsToFinalize ? parseInt(stepsToFinalize, 10) : 0;
@@ -459,19 +503,22 @@ export default function HomeScreen() {
         }
       }
       await AsyncStorage.setItem('lastSyncDate', todayString);
-    } catch (error) {
-      console.error('Error finalizing previous day:', error);
+    } catch (error: any) {
+      // Handle Firebase offline errors gracefully
+      if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
+        console.log('[FINALIZE] App is offline - will retry finalizing when connection is restored');
+      } else {
+        console.error('Error finalizing previous day:', error);
+      }
     } finally {
       isSyncing.current = false;
     }
   };
-
-  const progress = Math.min((todaysSteps / dailyStepGoal) * 100, 100);
-  const formattedStepCount = todaysSteps.toLocaleString();
-
   const coinAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: coinScale.value }],
   }));
+  const progress = Math.min((todaysSteps / dailyStepGoal) * 100, 100);
+  const formattedStepCount = todaysSteps.toLocaleString();
 
   return (
     <View style={styles.page}>
@@ -479,7 +526,6 @@ export default function HomeScreen() {
         colors={['#0D1B2A', '#1B263B', '#415A77']}
         style={styles.gradientBackground}
       >
-        {/* Animated Background - Outside ScrollView to prevent clipping */}
         <AnimatedBackground />
         
         {/* Single ScrollView with all content */}
@@ -531,7 +577,7 @@ export default function HomeScreen() {
               <Text style={styles.boostTitle}>
                 🌅 {boostType?.toUpperCase()} BOOST ACTIVE!
               </Text>
-              <Text style={styles.boostSubtitle}>Earning 2x coins! (0.02 per step)</Text>
+              <Text style={styles.boostSubtitle}>Earning 2x coins!</Text>
             </LinearGradient>
           )}
 
@@ -623,7 +669,7 @@ export default function HomeScreen() {
                 <View style={styles.rankInfo}>
                   <Text style={styles.rankLabel}>🏆 Your Rank</Text>
                   <Text style={styles.rankNumber}>
-                    {userRank ? `# ${userRank}` : '# —'}
+                    {userRank ? `# ${userRank}` : '# _'}
                   </Text>
                   <Text style={styles.rankSteps}>{formattedStepCount} steps today</Text>
                 </View>

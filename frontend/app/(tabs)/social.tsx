@@ -7,7 +7,7 @@ import { useSteps } from '../../context/StepContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FontAwesome } from '@expo/vector-icons';
 import { auth, db } from '../../firebaseConfig';
-import { doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, increment, deleteField, runTransaction } from 'firebase/firestore';
 
 const getLocalDateString = (date = new Date()) => {
   const year = date.getFullYear();
@@ -33,34 +33,59 @@ export default function SocialScreen() {
   const [challengeStartSteps, setChallengeStartSteps] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [hasClaimedReward, setHasClaimedReward] = useState(false);
-  const { isLoggingOut } = useSteps();
+  const { isLoggingOut, coins = 0, setCoins } = useSteps();
 
   // Join challenge function
   const joinChallenge = async () => {
     if (!auth.currentUser) return;
-    
+    // Prevent joining if already joined or completed
+    if (hasJoinedChallenge) return;
+    if (hasClaimedReward) return;
+
     setIsLoading(true);
     try {
       const today = getLocalDateString();
       const userId = auth.currentUser.uid;
-      
+
       // Get current steps when joining
       const storedData = await AsyncStorage.getItem(`dailySteps_${today}`);
       const currentSteps = storedData ? parseInt(storedData, 10) : 0;
-      
-      // Store challenge participation in Firebase
-      const challengeRef = doc(db, 'users', userId);
-      const challengeData = {
-        [`dailyChallenge_${today}`]: {
-          challengeGoal: dailyChallenge,
-          startSteps: currentSteps,
-          joinedAt: new Date().toISOString(),
-          completed: false
-        }
+
+      // Prepare challenge object
+      const challengeObj = {
+        challengeGoal: dailyChallenge,
+        startSteps: currentSteps,
+        joinedAt: new Date().toISOString(),
+        completed: false,
       };
-      
-      await updateDoc(challengeRef, challengeData);
-      
+
+      const userRef = doc(db, 'users', userId);
+
+      // Use a transaction to ensure the user has >=2 coins before deducting and writing the challenge
+      await runTransaction(db, async (tx) => {
+        const userSnap = await tx.get(userRef);
+        const userData = userSnap.exists() ? userSnap.data() : {};
+        const currentCoins = Number(userData.coins || 0);
+        if (currentCoins < 2) {
+          throw new Error('Insufficient coins');
+        }
+
+        // update coins and set today's challenge atomically
+        tx.update(userRef, {
+          coins: currentCoins - 2,
+          [`dailyChallenge_${today}`]: challengeObj,
+        });
+      });
+
+      // Update local UI coins after successful transaction
+      try {
+        if (typeof setCoins === 'function') {
+          setCoins((prev: number) => (Number(prev) || 0) - 2);
+        }
+      } catch (e) {
+        console.error('Error updating local coins after joining challenge:', e);
+      }
+
       setHasJoinedChallenge(true);
       setChallengeStartSteps(currentSteps);
     } catch (error) {
@@ -91,6 +116,31 @@ export default function SocialScreen() {
       console.log('50 coins awarded for daily challenge completion!');
     } catch (error) {
       console.error('Error awarding coins:', error);
+    }
+  };
+
+  // Leave today's challenge (remove participation, no refund)
+  const leaveChallenge = async () => {
+    if (!auth.currentUser) return;
+    setIsLoading(true);
+    try {
+      const today = getLocalDateString();
+      const userId = auth.currentUser.uid;
+      const userRef = doc(db, 'users', userId);
+
+      // Remove the daily challenge object for today
+      await updateDoc(userRef, {
+        [`dailyChallenge_${today}`]: deleteField(),
+      });
+
+      // Update local UI state
+      setHasJoinedChallenge(false);
+      setChallengeStartSteps(0);
+      setHasClaimedReward(false);
+    } catch (err) {
+      console.error('Error leaving challenge:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -200,11 +250,11 @@ export default function SocialScreen() {
                 </ThemedText>
                 
                 {!hasJoinedChallenge ? (
-                  // JOIN NOW Button
+                  // JOIN FOR 2 COINS Button
                   <Pressable 
                     style={styles.joinButton} 
                     onPress={joinChallenge}
-                    disabled={isLoading}
+                    disabled={isLoading || (Number(coins) || 0) < 2}
                   >
                     <LinearGradient
                       colors={['#8BC34A', '#689F38']}
@@ -212,7 +262,7 @@ export default function SocialScreen() {
                     >
                       <FontAwesome name="play" size={16} color="#fff" />
                       <ThemedText style={styles.joinButtonText}>
-                        {isLoading ? 'JOINING...' : 'JOIN NOW'}
+                        {isLoading ? 'JOINING...' : 'JOIN FOR 2 COINS'}
                       </ThemedText>
                     </LinearGradient>
                   </Pressable>
@@ -273,6 +323,24 @@ export default function SocialScreen() {
                         </LinearGradient>
                       </View>
                     </View>
+
+                    {/* Leave Challenge button (visible when joined and not completed) */}
+                    {hasJoinedChallenge && !isCompleted && (
+                      <Pressable
+                        style={[styles.leaveButton]}
+                        onPress={leaveChallenge}
+                        disabled={isLoading}
+                      >
+                        <LinearGradient
+                          colors={['#E53935', '#D32F2F']}
+                          style={styles.leaveButtonGradient}
+                        >
+                          <ThemedText style={styles.leaveButtonText}>
+                            {isLoading ? 'LEAVING...' : 'Leave Challenge'}
+                          </ThemedText>
+                        </LinearGradient>
+                      </Pressable>
+                    )}
 
                     {isCompleted && (
                       <View style={styles.completedBadge}>
@@ -389,6 +457,23 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#ffffff',
     marginLeft: 8,
+  },
+  leaveButton: {
+    marginTop: 12,
+    borderRadius: 10,
+    overflow: 'hidden',
+    alignSelf: 'center',
+    width: '60%',
+  },
+  leaveButtonGradient: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  leaveButtonText: {
+    color: '#fff',
+    fontWeight: '700',
   },
   progressContainer: {
     width: '100%',

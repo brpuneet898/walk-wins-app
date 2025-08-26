@@ -66,14 +66,19 @@ const AppDataController = ({ children }: { children: ReactNode }) => {
         const leaderboardPromises = todaysEntries.map(async (dailyDoc, index) => {
           const userRef = dailyDoc.ref.parent.parent; // parent is dailySteps collection, its parent is user doc
           let username = 'Unknown';
+          let userId = '';
           if (userRef) {
             const userSnap = await getDoc(userRef);
-            if (userSnap.exists()) username = userSnap.data().username || 'Unknown';
+            if (userSnap.exists()) {
+              username = userSnap.data().username || 'Unknown';
+              userId = userSnap.id; // Get the user ID
+            }
           }
           return {
             rank: index + 1,
             username,
             steps: dailyDoc.data().steps || 0,
+            userId, // Include userId in the leaderboard entry
             date: dailyDoc.id, // typically the date string
             time: dailyDoc.data().updatedAt || dailyDoc.data().timestamp || null,
           };
@@ -83,8 +88,12 @@ const AppDataController = ({ children }: { children: ReactNode }) => {
         if (!cancelled) setLeaderboardData(leaderboard);
 
         console.log('[Data Controller] Data fetch complete.');
-      } catch (error) {
-        console.error('[Data Controller] Error fetching data:', error);
+      } catch (error: any) {
+        if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
+          console.log('[Data Controller] App is offline - using cached data');
+        } else {
+          console.error('[Data Controller] Error fetching data:', error);
+        }
       }
     };
 

@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+// @ts-ignore - firebaseConfig is JS without TS types
 import { auth, db } from '../firebaseConfig';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 
 // A type for a single daily record
 export interface DailyRecord {
@@ -13,6 +14,7 @@ export interface LeaderboardEntry {
   rank: number;
   username: string;
   steps: number;
+  userId?: string; // Add optional userId field
 }
 
 // The final, correct shape of our context data
@@ -29,6 +31,8 @@ interface StepContextType {
   setCoins: React.Dispatch<React.SetStateAction<number>>;
   isBoostActive: boolean;
   boostType: 'sunrise' | 'sunset' | null;
+  boostSteps: number;
+  setBoostSteps: React.Dispatch<React.SetStateAction<number>>;
 }
 
 const StepContext = createContext<StepContextType | undefined>(undefined);
@@ -42,7 +46,7 @@ const checkBoostTime = () => {
 
   // Sunrise: 5:30 AM to 7:00 AM (330 to 420 minutes)
   const sunriseStart = 5 * 60 + 30; // 5:30 AM
-  const sunriseEnd = 7 * 60; // 7:00 AM
+  const sunriseEnd = 7 * 60; // 7:10 AM
 
   // Sunset: 5:30 PM to 7:00 PM (1050 to 1140 minutes)
   const sunsetStart = 17 * 60 + 30; // 5:30 PM
@@ -68,6 +72,7 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
   // Boost state - update every minute
   const [isBoostActive, setIsBoostActive] = useState(false);
   const [boostType, setBoostType] = useState<'sunrise' | 'sunset' | null>(null);
+  const [boostSteps, setBoostSteps] = useState(0);
 
   // Load coins from Firebase when user logs in
   useEffect(() => {
@@ -82,7 +87,7 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
             setCoins(userCoins);
 
             // Initialize missing fields for existing users
-            const updates = {};
+            const updates: any = {};
             if (userData.coins === undefined) {
               updates.coins = 0;
             }
@@ -105,19 +110,23 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
       }
     };
 
-    // Load coins when component mounts
+    // Load user data when component mounts
     loadUserCoins();
 
     // Listen for auth state changes
-    const unsubscribe = auth.onAuthStateChanged((user) => {
+    // cast to any because firebase config is a JS module without types
+    // @ts-ignore
+    const currentAuth: any = auth;
+    const unsubscribeAuth = currentAuth.onAuthStateChanged((user: any) => {
       if (user) {
         loadUserCoins();
       } else {
         setCoins(0); // Reset coins when user logs out
+        setBoostSteps(0);
       }
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, []);
 
   // Check boost status every minute
@@ -137,6 +146,38 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // Keep boostSteps (aggregated) in sync via realtime listener on the user's doc
+  useEffect(() => {
+    let unsubscribeUserSnap: (() => void) | null = null;
+    // @ts-ignore
+    const currentAuth: any = auth;
+    const unsubscribeAuth = currentAuth.onAuthStateChanged((user: any) => {
+      if (user) {
+        const userDocRef = doc(db, 'users', user.uid);
+        unsubscribeUserSnap = onSnapshot(userDocRef, (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            const dbBoost = Number(data.boostSteps) || 0;
+            // avoid overwriting local, unsynced increments: keep the larger of local vs db
+            setBoostSteps((prev) => Math.max(Number(prev) || 0, dbBoost));
+            if (data.coins !== undefined) setCoins(data.coins || 0);
+          } else {
+            setBoostSteps(0);
+          }
+        }, (err) => {
+          console.error('Error listening to user doc:', err);
+        });
+      } else {
+        setBoostSteps(0);
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeUserSnap) unsubscribeUserSnap();
+    };
+  }, []);
+
   return (
     // The provider's value now correctly includes ALL state management functions
     <StepContext.Provider value={{
@@ -151,7 +192,9 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
       coins,
       setCoins,
       isBoostActive,
-      boostType
+  boostType,
+  boostSteps,
+  setBoostSteps
     }}>
       {children}
     </StepContext.Provider>
