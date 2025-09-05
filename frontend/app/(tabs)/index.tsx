@@ -17,6 +17,10 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { Svg, Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
+// Audio and mood imports
+import { useAudio } from '../../context/AudioContext';
+import MoodModal from '../../components/MoodModal';
+import { getAvailableMoods, getCurrentSpecialTime } from '../../utils/moodUtils';
 // --- Types ---
 type WeeklyDay = {
   dayLabel: string;
@@ -153,6 +157,13 @@ export default function HomeScreen() {
   const [userRank, setUserRank] = useState<number | null>(null);
   const [weeklyData, setWeeklyData] = useState<WeeklyDay[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null); // 👈 ADD: User profile state
+  
+  // Mood/Audio states
+  const [showMoodModal, setShowMoodModal] = useState(false);
+  const [availableMoods, setAvailableMoods] = useState<string[]>([]);
+  
+  // Audio context
+  const { currentSong, isPlaying } = useAudio();
   
   // Refs must be declared before using them
   const isSyncing = useRef(false);
@@ -385,7 +396,26 @@ export default function HomeScreen() {
       const todayString = getLocalDateString();
       const storedData = await AsyncStorage.getItem(`dailySteps_${todayString}`);
       const initialTodaysSteps = storedData ? parseInt(storedData, 10) : 0;
-      setTodaysSteps(initialTodaysSteps);
+      
+      // Check Firestore for today's steps and use the higher value
+      let finalTodaysSteps = initialTodaysSteps;
+      try {
+        const dailyStepsRef = doc(db, `users/${currentUser.uid}/dailySteps`, todayString);
+        const dailyStepsSnap = await getDoc(dailyStepsRef);
+        if (dailyStepsSnap.exists()) {
+          const firestoreSteps = dailyStepsSnap.data().steps || 0;
+          if (firestoreSteps > initialTodaysSteps) {
+            finalTodaysSteps = firestoreSteps;
+            // Update local storage with Firestore value
+            await AsyncStorage.setItem(`dailySteps_${todayString}`, String(firestoreSteps));
+            console.log(`[STEP SYNC] Loaded ${firestoreSteps} steps from Firestore (local had ${initialTodaysSteps})`);
+          }
+        }
+      } catch (error) {
+        console.log('[STEP SYNC] Failed to load from Firestore, using local value');
+      }
+      
+      setTodaysSteps(finalTodaysSteps);
 
       // Fetch initial data
   await fetchUserProfile(); // 👈 ADD: Fetch user profile
@@ -396,7 +426,7 @@ export default function HomeScreen() {
       startOfToday.setHours(0, 0, 0, 0);
       try {
         const todaySteps = await Pedometer.getStepCountAsync(startOfToday, new Date());
-        if (todaySteps.steps > initialTodaysSteps) {
+        if (todaySteps.steps > finalTodaysSteps) {
           setTodaysSteps(todaySteps.steps);
         }
       } catch (error) {
@@ -506,6 +536,22 @@ export default function HomeScreen() {
       saveToDevice();
     }
   }, [todaysSteps]);
+
+  // Update available moods based on time
+  useEffect(() => {
+    const updateMoods = () => {
+      const moods = getAvailableMoods();
+      setAvailableMoods(moods);
+    };
+
+    // Update immediately
+    updateMoods();
+
+    // Update every minute to catch sunrise/sunset times
+    const interval = setInterval(updateMoods, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const finalizePreviousDaySteps = async () => {
     if (isSyncing.current) return;
@@ -617,6 +663,41 @@ export default function HomeScreen() {
             </LinearGradient>
           )}
 
+          {/* Mood Music Card */}
+          <Pressable
+            style={styles.moodCard}
+            onPress={() => setShowMoodModal(true)}
+          >
+            <LinearGradient
+              colors={['#667eea', '#764ba2']}
+              style={styles.moodGradient}
+            >
+              <View style={styles.moodContent}>
+                <View style={styles.moodHeader}>
+                  <Text style={styles.moodEmoji}>🎵</Text>
+                  <View style={styles.moodTextContainer}>
+                    <Text style={styles.moodTitle}>
+                      {currentSong ? `♫ ${currentSong.title}` : 'Play what your mood says'}
+                    </Text>
+                    <Text style={styles.moodSubtitle}>
+                      {currentSong 
+                        ? `${isPlaying ? 'Now Playing' : 'Paused'} • Tap to change mood`
+                        : `${availableMoods.length} mood${availableMoods.length !== 1 ? 's' : ''} available`
+                      }
+                    </Text>
+                  </View>
+                </View>
+                {getCurrentSpecialTime() && (
+                  <View style={styles.specialMoodIndicator}>
+                    <Text style={styles.specialMoodText}>
+                      ✨ {getCurrentSpecialTime() === 'sunrise' ? 'Sunrise' : 'Sunset'} vibes available!
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </LinearGradient>
+          </Pressable>
+
           {/* Spacer to restore gap between header and progress circle */}
           <View style={styles.spacer} />
 
@@ -717,6 +798,13 @@ export default function HomeScreen() {
           </Pressable>
         </ScrollView>
       </LinearGradient>
+      
+      {/* Mood Selection Modal */}
+      <MoodModal
+        visible={showMoodModal}
+        onClose={() => setShowMoodModal(false)}
+        availableMoods={availableMoods}
+      />
     </View>
   );
 }
@@ -1000,5 +1088,58 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(139,195,74,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Mood Music Card Styles
+  moodCard: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 20,
+    overflow: 'hidden',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  moodGradient: {
+    padding: 0,
+  },
+  moodContent: {
+    padding: 20,
+  },
+  moodHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  moodEmoji: {
+    fontSize: 28,
+  },
+  moodTextContainer: {
+    flex: 1,
+  },
+  moodTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  moodSubtitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  specialMoodIndicator: {
+    marginTop: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  specialMoodText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

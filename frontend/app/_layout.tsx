@@ -13,6 +13,8 @@ import PushNotificationManager from '../components/PushNotificationManager';
 import { LevelProvider } from '../context/LevelContext';
 // ⭐️ 3. Import the GlobalLevelUpModal
 import GlobalLevelUpModal from '../components/GlobalLevelUpModal';
+// ⭐️ 4. Import the AudioProvider for music system
+import { AudioProvider } from '../context/AudioContext';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -71,15 +73,17 @@ function RootLayoutNav() {
   return (
     <PushNotificationManager>
       <LevelProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-            <Stack.Screen name="+not-found" />
-          </Stack>
-          {/* ⭐️ Global level-up modal that can appear on any screen */}
-          <GlobalLevelUpModal />
-        </ThemeProvider>
+        <AudioProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+            {/* ⭐️ Global level-up modal that can appear on any screen */}
+            <GlobalLevelUpModal />
+          </ThemeProvider>
+        </AudioProvider>
       </LevelProvider>
     </PushNotificationManager>
   );

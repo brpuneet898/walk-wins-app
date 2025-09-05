@@ -10,6 +10,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { StepProvider, useSteps } from '../../context/StepContext';
 import { auth, db } from '../../firebaseConfig';
 import { doc, getDoc, collection, getDocs, query, orderBy, collectionGroup, limit } from 'firebase/firestore';
+import MusicBar from '../../components/MusicBar';
 
 const getLocalDateString = (date = new Date()) => {
   const year = date.getFullYear();
@@ -130,6 +131,8 @@ export default function TabLayout() {
   return (
     <StepProvider>
       <AppDataController>
+        {/* Music Bar - appears on top of all tabs */}
+        <MusicBar />
         <Tabs
           screenOptions={{
             tabBarActiveTintColor: '#8BC34A', // Green for active
