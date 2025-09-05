@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can read and write their own user document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Users can read and write their own daily steps
+    match /users/{userId}/dailySteps/{document} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow authenticated users to read all daily steps for leaderboard
+    // but only write their own
+    match /{path=**}/dailySteps/{document} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        path.split('/')[1] == request.auth.uid;
+    }
+    
+    // Allow authenticated users to read other users' basic info for leaderboard
+    match /users/{userId} {
+      allow read: if request.auth != null;
+    }
+  }
+}
