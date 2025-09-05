@@ -6,6 +6,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { useSteps } from '../../context/StepContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome, Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -13,13 +14,31 @@ import Animated, {
 } from 'react-native-reanimated';
 import Slider from '@react-native-community/slider';
 import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
+// Level system imports
+import { useLevelSystem, useLevelCalculations } from '../../context/LevelContext';
+import LevelBadge from '../../components/LevelBadge';
+import LevelInfoModal from '../../components/LevelInfoModal';
+import LevelUpModal from '../../components/LevelUpModal';
 
 export default function ProfileScreen() {
   const { setIsLoggingOut, dailyRecords = [] } = useSteps();
+  const router = useRouter();
   const user = auth.currentUser;
   const [userProfile, setUserProfile] = useState(null);
   const [dailyStepGoal, setDailyStepGoal] = useState(3000);
   const [sliderValue, setSliderValue] = useState(3000);
+
+  // Level system hooks and state
+  const { 
+    currentLevel, 
+    lifetimeSteps, 
+    showLevelUpModal, 
+    pendingLevelUp, 
+    dismissLevelUpModal,
+    initializeUserLevel 
+  } = useLevelSystem();
+  const { levelInfo, nextLevel, getProgressToNextLevel } = useLevelCalculations();
+  const [showLevelInfoModal, setShowLevelInfoModal] = useState(false);
 
   const buttonScale = useSharedValue(1);
 
@@ -86,11 +105,17 @@ export default function ProfileScreen() {
           const goalFromDb = userData.dailyStepGoal || 3000;
           setDailyStepGoal(goalFromDb);
           setSliderValue(goalFromDb);
+
+          // Initialize level system if user doesn't have level data
+          if (userData.currentLevel === undefined && (userData.lifetimeSteps || userData.lifetimeTotalSteps)) {
+            const stepsToUse = userData.lifetimeSteps || userData.lifetimeTotalSteps || 0;
+            await initializeUserLevel(stepsToUse);
+          }
         }
       }
     };
     fetchUserProfile();
-  }, [user]);
+  }, [user, initializeUserLevel]);
 
   const updateGoalInDatabase = async (newGoal) => {
     const currentUser = auth.currentUser;
@@ -214,6 +239,14 @@ export default function ProfileScreen() {
             </View>
           </LinearGradient>
         </View>
+
+        {/* Level System Section */}
+        <LevelBadge 
+          userLevel={currentLevel}
+          lifetimeSteps={lifetimeSteps}
+          onInfoPress={() => setShowLevelInfoModal(true)}
+          size="large"
+        />
 
         {/* Daily Goals Section */}
         <View style={styles.goalsSection}>
@@ -441,6 +474,24 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
       </ScrollView>
+
+      {/* Level Info Modal */}
+      <LevelInfoModal 
+        visible={showLevelInfoModal}
+        onClose={() => setShowLevelInfoModal(false)}
+        currentUserLevel={currentLevel}
+      />
+
+      {/* Level Up Modal */}
+      {pendingLevelUp && (
+        <LevelUpModal
+          visible={showLevelUpModal}
+          onClose={dismissLevelUpModal}
+          oldLevel={pendingLevelUp.oldLevel}
+          newLevel={pendingLevelUp.newLevel}
+          lifetimeSteps={lifetimeSteps}
+        />
+      )}
     </LinearGradient>
   );
 }

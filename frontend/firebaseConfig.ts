@@ -1,11 +1,8 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from 'firebase/app';
-import { initializeAuth, getReactNativePersistence, getAuth, Auth } from 'firebase/auth';
+import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
-
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+import { Platform } from 'react-native';
 
 // Firebase configuration
 const firebaseConfig = {
@@ -23,25 +20,29 @@ const app = initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);
 
-// --- UPDATED AUTH INITIALIZATION ---
+// --- AUTH INITIALIZATION ---
 // This setup works for both web and mobile
-import { Platform } from 'react-native';
-
 let auth: Auth;
-let messaging = null;
 
 if (Platform.OS === 'web') {
   // For web, use the default auth
   auth = getAuth(app);
-  
-  // Note: Firebase messaging for web will be set up later when needed
   console.log("🌐 Web platform detected - using web auth");
 } else {
-  // For mobile, use React Native persistence
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(ReactNativeAsyncStorage)
-  });
-  console.log("📱 Mobile platform detected - using React Native auth");
+  // For mobile, try React Native auth with fallback to web auth
+  try {
+    const { initializeAuth, getReactNativePersistence } = require('firebase/auth');
+    const ReactNativeAsyncStorage = require('@react-native-async-storage/async-storage').default;
+    
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+    });
+    console.log("📱 Mobile platform detected - using React Native auth");
+  } catch (error) {
+    // Fallback to web auth if React Native auth fails
+    auth = getAuth(app);
+    console.log("📱 Mobile platform detected - fallback to web auth");
+  }
 }
 
-export { auth, messaging };
+export { auth };

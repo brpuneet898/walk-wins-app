@@ -44,20 +44,26 @@ const checkBoostTime = () => {
   const minutes = now.getMinutes();
   const currentTime = hours * 60 + minutes; // Convert to minutes since midnight
 
-  // Sunrise: 5:30 AM to 7:00 AM (330 to 420 minutes)
-  const sunriseStart = 5 * 60 + 30; // 5:30 AM
-  const sunriseEnd = 7 * 60; // 7:10 AM
+  // Sunrise: 4:00 AM to 7:00 AM (240 to 420 minutes) - TEMPORARILY EXTENDED FOR TESTING
+  const sunriseStart = 4 * 60; // 4:00 AM (240 minutes)
+  const sunriseEnd = 7 * 60; // 7:00 AM (420 minutes)
 
   // Sunset: 5:30 PM to 7:00 PM (1050 to 1140 minutes)
-  const sunsetStart = 17 * 60 + 30; // 5:30 PM
-  const sunsetEnd = 19 * 60; // 7:00 PM
+  const sunsetStart = 17 * 60 + 30; // 5:30 PM (1050 minutes)
+  const sunsetEnd = 19 * 60; // 7:00 PM (1140 minutes)
+
+  console.log(`[BOOST DEBUG] Current time: ${hours}:${minutes.toString().padStart(2, '0')} (${currentTime} minutes)`);
+  console.log(`[BOOST DEBUG] Sunrise: ${sunriseStart}-${sunriseEnd}, Sunset: ${sunsetStart}-${sunsetEnd}`);
 
   if (currentTime >= sunriseStart && currentTime <= sunriseEnd) {
+    console.log('[BOOST DEBUG] SUNRISE BOOST ACTIVE!');
     return { isActive: true, type: 'sunrise' as const };
   } else if (currentTime >= sunsetStart && currentTime <= sunsetEnd) {
+    console.log('[BOOST DEBUG] SUNSET BOOST ACTIVE!');
     return { isActive: true, type: 'sunset' as const };
   }
 
+  console.log('[BOOST DEBUG] No boost active');
   return { isActive: false, type: null };
 };
 
@@ -90,6 +96,9 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
             const updates: any = {};
             if (userData.coins === undefined) {
               updates.coins = 0;
+            }
+            if (userData.boostSteps === undefined) {
+              updates.boostSteps = 0;
             }
             if (userData.referralCode === undefined && userData.username) {
               // Generate referral code for existing users
@@ -133,6 +142,7 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const updateBoostStatus = () => {
       const boostStatus = checkBoostTime();
+      console.log(`[STEP CONTEXT] Setting boost active: ${boostStatus.isActive}, type: ${boostStatus.type}`);
       setIsBoostActive(boostStatus.isActive);
       setBoostType(boostStatus.type);
     };
@@ -140,8 +150,8 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
     // Check immediately
     updateBoostStatus();
 
-    // Then check every minute
-    const interval = setInterval(updateBoostStatus, 60000);
+    // Then check every 10 seconds for testing (normally 60000 for 1 minute)
+    const interval = setInterval(updateBoostStatus, 10000);
 
     return () => clearInterval(interval);
   }, []);

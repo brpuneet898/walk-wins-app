@@ -8,7 +8,11 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import 'react-native-reanimated';
 
 // ⭐️ 1. Import the new PushNotificationManager component
-// import PushNotificationManager from '../components/PushNotificationManager';
+import PushNotificationManager from '../components/PushNotificationManager';
+// ⭐️ 2. Import the LevelProvider for level system
+import { LevelProvider } from '../context/LevelContext';
+// ⭐️ 3. Import the GlobalLevelUpModal
+import GlobalLevelUpModal from '../components/GlobalLevelUpModal';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -39,6 +43,8 @@ function RootLayoutNav() {
   // This useEffect for authentication remains the same
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      console.log('[AUTH DEBUG] Current user:', currentUser ? currentUser.uid : 'null');
+      console.log('[AUTH DEBUG] User email:', currentUser ? currentUser.email : 'null');
       setUser(currentUser);
       setLoading(false);
     });
@@ -63,12 +69,18 @@ function RootLayoutNav() {
 
   // The ThemeProvider and Stack navigator remain the same
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-    </ThemeProvider>
+    <PushNotificationManager>
+      <LevelProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+            <Stack.Screen name="+not-found" />
+          </Stack>
+          {/* ⭐️ Global level-up modal that can appear on any screen */}
+          <GlobalLevelUpModal />
+        </ThemeProvider>
+      </LevelProvider>
+    </PushNotificationManager>
   );
 }

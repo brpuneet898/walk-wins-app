@@ -3,6 +3,7 @@ const admin = require("firebase-admin");
 const { Expo } = require("expo-server-sdk");
 const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 admin.initializeApp();
@@ -522,3 +523,93 @@ Return only the notification message.`;
     return { success: false, message: error.message };
   }
 }
+
+// 🎮 LEVEL SYSTEM CLOUD FUNCTIONS
+
+// Update level statistics whenever a user's level changes
+exports.updateLevelStats = onDocumentUpdated("users/{userId}", async (event) => {
+  const beforeData = event.data.before.data();
+  const afterData = event.data.after.data();
+  
+  // Check if level changed
+  const beforeLevel = beforeData.currentLevel || 0;
+  const afterLevel = afterData.currentLevel || 0;
+  
+  if (beforeLevel !== afterLevel) {
+    console.log(`🎮 User level changed: ${beforeLevel} → ${afterLevel}`);
+    
+    try {
+      // Update level statistics
+      const batch = admin.firestore().batch();
+      
+      // Decrease count for old level (if not level 0)
+      if (beforeLevel > 0) {
+        const oldLevelRef = db.collection('levelStats').doc(`level_${beforeLevel}`);
+        batch.update(oldLevelRef, {
+          userCount: admin.firestore.FieldValue.increment(-1),
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+      
+      // Increase count for new level
+      const newLevelRef = db.collection('levelStats').doc(`level_${afterLevel}`);
+      batch.set(newLevelRef, {
+        level: afterLevel,
+        userCount: admin.firestore.FieldValue.increment(1),
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      
+      await batch.commit();
+      console.log(`✅ Level statistics updated for levels ${beforeLevel} → ${afterLevel}`);
+      
+    } catch (error) {
+      console.error('❌ Error updating level statistics:', error);
+    }
+  }
+});
+
+// Initialize level statistics for all users (run once)
+exports.initializeLevelStats = onRequest({
+  cors: true,
+  invoker: "public"
+}, async (req, res) => {
+  console.log('🎮 Initializing level statistics...');
+  
+  try {
+    const usersSnapshot = await db.collection('users').get();
+    const levelCounts = {};
+    
+    // Count users at each level
+    usersSnapshot.forEach(doc => {
+      const userData = doc.data();
+      const level = userData.currentLevel || 0;
+      levelCounts[level] = (levelCounts[level] || 0) + 1;
+    });
+    
+    // Write level statistics
+    const batch = admin.firestore().batch();
+    for (let level = 0; level <= 10; level++) {
+      const levelRef = db.collection('levelStats').doc(`level_${level}`);
+      batch.set(levelRef, {
+        level: level,
+        userCount: levelCounts[level] || 0,
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+    
+    await batch.commit();
+    
+    res.status(200).json({
+      success: true,
+      message: 'Level statistics initialized successfully',
+      levelCounts
+    });
+    
+  } catch (error) {
+    console.error('❌ Error initializing level statistics:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});

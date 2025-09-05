@@ -10,7 +10,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
-import { calculateTotalEarnings } from '../../utils/earnings';
+import { calculateTotalEarnings, calculateStepEarnings, calculateBonusEarnings } from '../../utils/earnings';
+// Level system imports
+import { useLevelSystem } from '../../context/LevelContext';
 // @ts-ignore - firebaseConfig is a JS module without types
 import { auth, db } from '../../firebaseConfig';
 import { doc, updateDoc, increment } from 'firebase/firestore';
@@ -82,10 +84,16 @@ const AnimatedBackground = () => {
 
 export default function CoinScreen() {
   const { coins = 0, lifetimeSteps = 0, boostSteps = 0, setCoins } = useSteps() as any;
+  const { currentLevel } = useLevelSystem();
   const [isWatching, setIsWatching] = useState(false);
   const [showAdModal, setShowAdModal] = useState(false);
   const [adLoading, setAdLoading] = useState(true);
-  const totalEarned = calculateTotalEarnings(lifetimeSteps, coins, boostSteps);
+  
+  // Calculate earnings with level system
+  const totalEarned = calculateTotalEarnings(lifetimeSteps, coins, boostSteps, currentLevel);
+  const stepEarnings = calculateStepEarnings(lifetimeSteps, boostSteps, currentLevel);
+  const bonusEarnings = calculateBonusEarnings(coins);
+  
   // Put your YouTube link (shorts or regular) here. Examples:
   // 'https://www.youtube.com/shorts/VIDEOID', 'https://youtu.be/VIDEOID', or full watch URL
   const YT_LINK = 'https://www.youtube.com/shorts/ie_l0AJe13o';

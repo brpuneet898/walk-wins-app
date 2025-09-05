@@ -35,6 +35,8 @@ const getLocalDateString = (date = new Date()) => {
 };
 
 import { calculateTotalEarnings } from '../../utils/earnings';
+// Level system imports  
+import { useLevelSystem } from '../../context/LevelContext';
 
 const AnimatedBackground = () => {
   const scale1 = useSharedValue(1);
@@ -151,12 +153,26 @@ export default function HomeScreen() {
   const [userRank, setUserRank] = useState<number | null>(null);
   const [weeklyData, setWeeklyData] = useState<WeeklyDay[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null); // 👈 ADD: User profile state
-  const { isLoggingOut, isBoostActive, boostType, coins, lifetimeSteps, boostSteps: ctxBoostSteps = 0, setBoostSteps, leaderboardData } = useSteps() as any;
-  const router = useRouter();
+  
+  // Refs must be declared before using them
   const isSyncing = useRef(false);
   const lastStepValueFromListener = useRef(0);
   const boostStepsRef = useRef(0); // accumulate steps that occur during boost windows
   const isInitialized = useRef(false);
+  
+  const { isLoggingOut, isBoostActive, boostType, coins, boostSteps: ctxBoostSteps = 0, setBoostSteps, leaderboardData } = useSteps() as any;
+  
+  // Level system integration
+  const { currentLevel, updateLifetimeSteps, lifetimeSteps } = useLevelSystem();
+  
+  const isBoostActiveRef = useRef(isBoostActive); // Track current boost status
+  
+  // Debug logging for boost state
+  console.log(`[HOME DEBUG] isBoostActive from context: ${isBoostActive}, boostType: ${boostType}`);
+  
+  // Update ref whenever boost status changes
+  isBoostActiveRef.current = isBoostActive;
+  const router = useRouter();
 
   const coinScale = useSharedValue(1);
   // @ts-ignore
@@ -180,7 +196,7 @@ export default function HomeScreen() {
     return null;
   };
 
-  const totalEarnings = calculateTotalEarnings(lifetimeSteps, coins, boostSteps);
+  const totalEarnings = calculateTotalEarnings(lifetimeSteps, coins, ctxBoostSteps, currentLevel);
 
   // boostSteps now comes from StepContext (real-time via onSnapshot)
 
@@ -305,6 +321,10 @@ export default function HomeScreen() {
         await setDoc(dailyDocRef, { steps: currentStepCount });
         await updateDoc(userDocRef, { lifetimeTotalSteps: increment(incrementAmount) });
 
+        // Update level system with new lifetime steps
+        const newLifetimeSteps = lifetimeSteps + incrementAmount;
+        await updateLifetimeSteps(newLifetimeSteps);
+
         // Also sync any boosted steps accumulated locally for today
         try {
           const storedBoost = await AsyncStorage.getItem(`dailyBoostSteps_${todayString}`);
@@ -394,18 +414,30 @@ export default function HomeScreen() {
         lastStepValueFromListener.current = currentListenerSteps;
         if (incrementStep < 0) incrementStep = 0;
           if (incrementStep > 0) {
+            console.log(`[STEP DEBUG] Adding ${incrementStep} steps. Boost active: ${isBoostActiveRef.current}`);
             setTodaysSteps(prevSteps => prevSteps + incrementStep);
             try {
               // If we're in a boost window, accumulate boosted steps locally and persist to device storage
-              if (isBoostActive) {
+              if (isBoostActiveRef.current) {
+                console.log(`[BOOST DEBUG] Adding ${incrementStep} boost steps! Total boost: ${boostStepsRef.current + incrementStep}`);
                 boostStepsRef.current += incrementStep;
                 const todayStringLocal = getLocalDateString();
                 AsyncStorage.setItem(`dailyBoostSteps_${todayStringLocal}`, String(boostStepsRef.current));
                 // update app-wide boostSteps immediately so UI earnings reflect boosted rate right away
                 setBoostSteps((prev: number) => (Number(prev) || 0) + incrementStep);
+                console.log(`[BOOST DEBUG] Updated context boostSteps. Previous context value: ${boostSteps}`);
+                
+                // Force sync boost steps to Firestore immediately during boost periods
+                setTimeout(() => {
+                  console.log(`[BOOST DEBUG] Force syncing boost steps to Firestore...`);
+                  syncToFirebase();
+                }, 1000); // Sync after 1 second delay
+              } else {
+                console.log(`[BOOST DEBUG] No boost - normal step tracking only`);
               }
             } catch (e) {
               // silent fail for AsyncStorage
+              console.error('[BOOST DEBUG] Error saving boost steps:', e);
             }
           }
       });
@@ -499,6 +531,10 @@ export default function HomeScreen() {
           if (incrementAmount > 0) {
             await setDoc(dailyDocRef, { steps: finalStepCount });
             await updateDoc(userDocRef, { lifetimeTotalSteps: increment(incrementAmount) });
+            
+            // Update level system with new lifetime steps
+            const newLifetimeSteps = lifetimeSteps + incrementAmount;
+            await updateLifetimeSteps(newLifetimeSteps);
           }
         }
       }
