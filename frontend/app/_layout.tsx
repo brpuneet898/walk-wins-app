@@ -15,6 +15,8 @@ import { LevelProvider } from '../context/LevelContext';
 import GlobalLevelUpModal from '../components/GlobalLevelUpModal';
 // ⭐️ 4. Import the AudioProvider for music system
 import { AudioProvider } from '../context/AudioContext';
+// ⭐️ 5. Import the SplashScreen component
+import SplashScreen from '../components/SplashScreen';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -41,6 +43,12 @@ function RootLayoutNav() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
+
+  // Handle splash screen completion
+  const handleSplashComplete = () => {
+    setShowSplash(false);
+  };
 
   // This useEffect for authentication remains the same
   useEffect(() => {
@@ -55,7 +63,7 @@ function RootLayoutNav() {
 
   // This useEffect for redirection remains the same
   useEffect(() => {
-    if (loading) {
+    if (loading || showSplash) {
       return;
     }
     if (user) {
@@ -63,10 +71,15 @@ function RootLayoutNav() {
     } else {
       router.replace('/(auth)/login');
     }
-  }, [user, loading]);
+  }, [user, loading, showSplash]);
 
   if (loading) {
     return null;
+  }
+
+  // Show splash screen first
+  if (showSplash) {
+    return <SplashScreen onAnimationComplete={handleSplashComplete} />;
   }
 
   // The ThemeProvider and Stack navigator remain the same

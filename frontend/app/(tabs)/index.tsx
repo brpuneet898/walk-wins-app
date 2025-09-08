@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, AppState, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, AppState, ScrollView, Image, TouchableOpacity } from 'react-native';
 import { Pedometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // @ts-ignore - firebaseConfig is a JS module without TS types
@@ -16,7 +16,7 @@ import Animated, {
   withSpring,
   Easing,
 } from 'react-native-reanimated';
-import { Svg, Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
+import { Svg, Circle, Defs, LinearGradient as SvgGradient, Stop, Path } from 'react-native-svg';
 // Audio and mood imports
 import { useAudio } from '../../context/AudioContext';
 import MoodModal from '../../components/MoodModal';
@@ -161,6 +161,7 @@ export default function HomeScreen() {
   // Mood/Audio states
   const [showMoodModal, setShowMoodModal] = useState(false);
   const [availableMoods, setAvailableMoods] = useState<string[]>([]);
+  const [showBoostTooltip, setShowBoostTooltip] = useState(false);
   
   // Audio context
   const { currentSong, isPlaying } = useAudio();
@@ -186,6 +187,9 @@ export default function HomeScreen() {
   const router = useRouter();
 
   const coinScale = useSharedValue(1);
+  const tooltipOpacity = useSharedValue(0);
+  const tooltipScale = useSharedValue(0.8);
+  
   // @ts-ignore
   const currentAuth = auth as any;
   // @ts-ignore
@@ -232,9 +236,21 @@ export default function HomeScreen() {
 
   // Fetch weekly data
   const fetchWeeklyData = async () => {
+    console.log('[WEEKLY DATA] Starting to fetch weekly data...');
     try {
-  const currentUser = currentAuth.currentUser;
-      if (!currentUser) return;
+      const currentUser = currentAuth.currentUser;
+      if (!currentUser) {
+        console.log('[WEEKLY DATA] No current user, skipping fetch');
+        return;
+      }
+
+      // Don't fetch during logout to prevent permission errors
+      if (isLoggingOut) {
+        console.log('[WEEKLY DATA] Skipping fetch during logout');
+        return;
+      }
+
+      console.log('[WEEKLY DATA] Current user ID:', currentUser.uid);
 
       const today = new Date();
       const weekData = [];
@@ -246,6 +262,9 @@ export default function HomeScreen() {
       const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Adjust for Sunday (0) and Monday (1)
       monday.setDate(today.getDate() + diff);
 
+      console.log('[WEEKLY DATA] Today:', getLocalDateString(today));
+      console.log('[WEEKLY DATA] Monday of current week:', getLocalDateString(monday));
+
       for (let i = 0; i < 7; i++) {
         const date = new Date(monday);
         date.setDate(monday.getDate() + i);
@@ -254,22 +273,62 @@ export default function HomeScreen() {
         const dayLabel = dayLabels[i];
         const isToday = dateString === getLocalDateString(today);
         
-        // Get steps for this date
-        const dailyStepsRef = doc(db, `users/${currentUser.uid}/dailySteps`, dateString);
-        const dailyStepsSnap = await getDoc(dailyStepsRef);
-        const steps = dailyStepsSnap.exists() ? dailyStepsSnap.data().steps || 0 : 0;
+        let steps = 0;
+        
+        if (isToday) {
+          // For today, use the live todaysSteps value
+          steps = todaysSteps;
+          console.log(`[WEEKLY DATA] ${dateString} (${dayLabel}): Using live todaysSteps=${steps}`);
+        } else {
+          // For other days, check both Firestore and AsyncStorage
+          try {
+            console.log(`[WEEKLY DATA] Fetching data for ${dateString} (${dayLabel})...`);
+            
+            // First check AsyncStorage for potentially newer data
+            const storedSteps = await AsyncStorage.getItem(`dailySteps_${dateString}`);
+            const localSteps = storedSteps ? parseInt(storedSteps, 10) : 0;
+            console.log(`[WEEKLY DATA] ${dateString} AsyncStorage steps: ${localSteps}`);
+            
+            // Then try Firestore (with proper error handling)
+            let firestoreSteps = 0;
+            try {
+              // Double-check we still have a valid user before Firestore call
+              if (currentAuth.currentUser && !isLoggingOut) {
+                const dailyStepsRef = doc(db, `users/${currentUser.uid}/dailySteps`, dateString);
+                const dailyStepsSnap = await getDoc(dailyStepsRef);
+                firestoreSteps = dailyStepsSnap.exists() ? dailyStepsSnap.data().steps || 0 : 0;
+                console.log(`[WEEKLY DATA] ${dateString} Firestore steps: ${firestoreSteps}`);
+              } else {
+                console.log(`[WEEKLY DATA] User no longer authenticated, skipping Firestore for ${dateString}`);
+              }
+            } catch (firestoreError: any) {
+              console.log(`[WEEKLY DATA] Firestore error for ${dateString}:`, firestoreError.message);
+              // If Firestore fails, we'll use local data
+            }
+            
+            // Use the higher value (most recent data)
+            steps = Math.max(firestoreSteps, localSteps);
+            
+            console.log(`[WEEKLY DATA] ${dateString} (${dayLabel}): Firestore=${firestoreSteps}, Local=${localSteps}, Using=${steps}`);
+          } catch (error: any) {
+            console.log(`[WEEKLY DATA] Error fetching data for ${dateString}:`, error.message);
+            steps = 0;
+          }
+        }
         
         weekData.push({
           dayLabel,
           date: date.getDate().toString(),
-          steps: isToday ? todaysSteps : steps,
+          steps,
           goal: dailyStepGoal,
           isToday
         });
       }
       
+      console.log('[WEEKLY DATA] Final week data:', weekData.map(d => `${d.dayLabel}:${d.steps}`).join(', '));
       setWeeklyData(weekData);
     } catch (error: any) {
+      console.error('[WEEKLY DATA] Major error:', error.message);
       if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
         console.log('[WEEKLY] App is offline - using cached weekly data');
       } else {
@@ -313,58 +372,141 @@ export default function HomeScreen() {
     router.push('/coin');
   };
 
-  const syncToFirebase = async () => {
+  const handleBoostBadgeTap = () => {
+    setShowBoostTooltip(true);
+  };
+
+  const syncToFirebase = async (skipAuthCheck = false) => {
     if (isSyncing.current) return;
     isSyncing.current = true;
     try {
-  const currentUser = currentAuth.currentUser;
-      if (!currentUser) return;
+      const currentUser = currentAuth.currentUser;
+      if (!currentUser && !skipAuthCheck) {
+        console.log('[SYNC] No current user, skipping sync');
+        return;
+      }
+      
+      // If we're logging out, use the stored user ID for final sync
+      let userIdToUse = currentUser?.uid;
+      if (isLoggingOut && !userIdToUse) {
+        const storedUserId = await AsyncStorage.getItem('lastUserId');
+        if (storedUserId) {
+          userIdToUse = storedUserId;
+          console.log('[SYNC] Using stored user ID for logout sync:', userIdToUse);
+        } else {
+          console.log('[SYNC] No stored user ID available for logout sync');
+          return;
+        }
+      }
+      
+      if (!userIdToUse) {
+        console.log('[SYNC] No user ID available for sync');
+        return;
+      }
+      
+      console.log('[SYNC] Starting sync for user:', userIdToUse);
+      
       const todayString = getLocalDateString();
       const storedSteps = await AsyncStorage.getItem(`dailySteps_${todayString}`);
       const currentStepCount = storedSteps ? parseInt(storedSteps, 10) : 0;
-      if (currentStepCount === 0) return;
-      const dailyDocRef = doc(db, `users/${currentUser.uid}/dailySteps`, todayString);
-      const userDocRef = doc(db, 'users', currentUser.uid);
-      const dailyDocSnap = await getDoc(dailyDocRef);
-      const stepsAlreadyInDb = dailyDocSnap.exists() ? dailyDocSnap.data().steps : 0;
+      
+      console.log('[SYNC] Current step count to sync:', currentStepCount);
+      
+      if (currentStepCount === 0) {
+        console.log('[SYNC] No steps to sync');
+        return;
+      }
+      
+      const dailyDocRef = doc(db, `users/${userIdToUse}/dailySteps`, todayString);
+      const userDocRef = doc(db, 'users', userIdToUse);
+      
+      // Check current steps in database with better error handling
+      let stepsAlreadyInDb = 0;
+      try {
+        const dailyDocSnap = await getDoc(dailyDocRef);
+        stepsAlreadyInDb = dailyDocSnap.exists() ? dailyDocSnap.data().steps || 0 : 0;
+        console.log('[SYNC] Steps already in DB:', stepsAlreadyInDb);
+      } catch (readError: any) {
+        console.log('[SYNC] Error reading from DB, assuming 0 steps:', readError.message);
+        stepsAlreadyInDb = 0;
+      }
+      
       const incrementAmount = currentStepCount - stepsAlreadyInDb;
+      
       if (incrementAmount > 0) {
-        await setDoc(dailyDocRef, { steps: currentStepCount });
-        await updateDoc(userDocRef, { lifetimeTotalSteps: increment(incrementAmount) });
-
-        // Update level system with new lifetime steps
-        const newLifetimeSteps = lifetimeSteps + incrementAmount;
-        await updateLifetimeSteps(newLifetimeSteps);
-
-        // Also sync any boosted steps accumulated locally for today
+        console.log('[SYNC] Incrementing by:', incrementAmount);
+        
         try {
-          const storedBoost = await AsyncStorage.getItem(`dailyBoostSteps_${todayString}`);
-          const boostCount = storedBoost ? parseInt(storedBoost, 10) : 0;
-          if (boostCount > 0) {
-            // write boostSteps into the daily doc (merge)
-            await setDoc(dailyDocRef, { steps: currentStepCount, boostSteps: boostCount });
-            // increment aggregated boostSteps on user doc
-            await updateDoc(userDocRef, { boostSteps: increment(boostCount) });
-            // clear stored boost and reset local accumulator
-            await AsyncStorage.removeItem(`dailyBoostSteps_${todayString}`);
-            boostStepsRef.current = 0;
-            // also sync context value (best-effort)
-            setBoostSteps((prev: number) => Math.max((prev || 0) - boostCount, 0));
-          }
-        } catch (e) {
-          console.error('Error syncing boostSteps:', e);
-        }
+          await setDoc(dailyDocRef, { steps: currentStepCount }, { merge: true });
+          console.log('[SYNC] Successfully updated daily steps');
+          
+          await updateDoc(userDocRef, { lifetimeTotalSteps: increment(incrementAmount) });
+          console.log('[SYNC] Successfully updated lifetime steps');
 
-        // Fetch updated rank and weekly data after syncing
-        getUserRankFromLeaderboard();
-        await fetchWeeklyData();
+          // Update level system with new lifetime steps (only if not logging out)
+          if (!isLoggingOut) {
+            const newLifetimeSteps = lifetimeSteps + incrementAmount;
+            await updateLifetimeSteps(newLifetimeSteps);
+          }
+
+          // Also sync any boosted steps accumulated locally for today
+          try {
+            const storedBoost = await AsyncStorage.getItem(`dailyBoostSteps_${todayString}`);
+            const boostCount = storedBoost ? parseInt(storedBoost, 10) : 0;
+            if (boostCount > 0) {
+              console.log('[SYNC] Syncing boost steps:', boostCount);
+              // write boostSteps into the daily doc (merge)
+              await setDoc(dailyDocRef, { steps: currentStepCount, boostSteps: boostCount }, { merge: true });
+              // increment aggregated boostSteps on user doc
+              await updateDoc(userDocRef, { boostSteps: increment(boostCount) });
+              // clear stored boost and reset local accumulator
+              await AsyncStorage.removeItem(`dailyBoostSteps_${todayString}`);
+              boostStepsRef.current = 0;
+              // also sync context value (best-effort) - only if not logging out
+              if (!isLoggingOut) {
+                setBoostSteps((prev: number) => Math.max((prev || 0) - boostCount, 0));
+              }
+            }
+          } catch (boostError: any) {
+            console.error('[SYNC] Error syncing boostSteps:', boostError.message);
+          }
+
+          // Fetch updated rank and weekly data after syncing (only if not logging out)
+          if (!isLoggingOut && currentUser) {
+            getUserRankFromLeaderboard();
+            await fetchWeeklyData();
+          }
+          
+          console.log('[SYNC] Sync completed successfully');
+        } catch (writeError: any) {
+          if (writeError.code === 'permission-denied') {
+            console.error('[SYNC] Permission denied - authentication may have expired');
+            // Don't throw error during logout to prevent blocking
+            if (!isLoggingOut) {
+              throw writeError;
+            }
+          } else {
+            console.error('[SYNC] Write error:', writeError.message);
+            if (!isLoggingOut) {
+              throw writeError; // Re-throw to be caught by outer try-catch
+            }
+          }
+        }
+      } else {
+        console.log('[SYNC] No new steps to sync');
       }
     } catch (error: any) {
       // Handle Firebase offline errors gracefully
       if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
         console.log('[SYNC] App is offline - will retry when connection is restored');
+      } else if (error?.code === 'permission-denied') {
+        console.error('[SYNC] Permission denied error - check Firebase rules and authentication');
+        // During logout, don't show this as an error since it's expected
+        if (!isLoggingOut) {
+          console.error('[SYNC] This may indicate an authentication issue');
+        }
       } else {
-        console.error('[SYNC] Error:', error);
+        console.error('[SYNC] Error:', error.message);
       }
     } finally {
       isSyncing.current = false;
@@ -385,8 +527,11 @@ export default function HomeScreen() {
       await finalizePreviousDaySteps();
 
       // Fetch daily step goal from database
-  const currentUser = currentAuth.currentUser;
+      const currentUser = currentAuth.currentUser;
       if (currentUser) {
+        // Store user ID for potential logout sync
+        await AsyncStorage.setItem('lastUserId', currentUser.uid);
+        
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists() && userDoc.data().dailyStepGoal) {
           setDailyStepGoal(userDoc.data().dailyStepGoal);
@@ -418,9 +563,11 @@ export default function HomeScreen() {
       setTodaysSteps(finalTodaysSteps);
 
       // Fetch initial data
-  await fetchUserProfile(); // 👈 ADD: Fetch user profile
-  getUserRankFromLeaderboard();
-  await fetchWeeklyData();
+      console.log('[INIT] Fetching initial data...');
+      await fetchUserProfile(); // 👈 ADD: Fetch user profile
+      getUserRankFromLeaderboard();
+      await fetchWeeklyData();
+      console.log('[INIT] Initial data fetch completed');
 
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
@@ -458,10 +605,13 @@ export default function HomeScreen() {
                 console.log(`[BOOST DEBUG] Updated context boostSteps. Previous context value: ${boostSteps}`);
                 
                 // Force sync boost steps to Firestore immediately during boost periods
-                setTimeout(() => {
-                  console.log(`[BOOST DEBUG] Force syncing boost steps to Firestore...`);
-                  syncToFirebase();
-                }, 1000); // Sync after 1 second delay
+                // But only if we're not in the process of logging out
+                if (!isLoggingOut) {
+                  setTimeout(() => {
+                    console.log(`[BOOST DEBUG] Force syncing boost steps to Firestore...`);
+                    syncToFirebase();
+                  }, 1000); // Sync after 1 second delay
+                }
               } else {
                 console.log(`[BOOST DEBUG] No boost - normal step tracking only`);
               }
@@ -477,7 +627,11 @@ export default function HomeScreen() {
 
     const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'background' || nextAppState === 'inactive') {
-        syncToFirebase();
+        console.log('[APP STATE] App going to background, syncing data...');
+        // Only sync if we have a current user or if we're in the process of logging out
+        if (currentAuth.currentUser || isLoggingOut) {
+          syncToFirebase();
+        }
       }
     });
 
@@ -485,9 +639,10 @@ export default function HomeScreen() {
       subscription?.remove();
       appStateSubscription?.remove();
       if (hourlySyncInterval) clearInterval(hourlySyncInterval);
-      if (!isLoggingOut) {
-        syncToFirebase();
-      }
+      
+      // Final sync - always attempt, regardless of logout state
+      console.log('[CLEANUP] Performing final sync before unmount, isLoggingOut:', isLoggingOut);
+      syncToFirebase(true); // Skip auth check for final sync
     };
   }, [isLoggingOut]);
 
@@ -527,6 +682,20 @@ export default function HomeScreen() {
     }
   }, [todaysSteps]);
 
+  // Force refresh weekly data when app starts or user changes
+  useEffect(() => {
+    const refreshData = async () => {
+      if (user) {
+        console.log('[WEEKLY DATA] Force refreshing data on user/app state change');
+        await fetchWeeklyData();
+      }
+    };
+    
+    // Small delay to ensure authentication is settled
+    const timeout = setTimeout(refreshData, 1000);
+    return () => clearTimeout(timeout);
+  }, [user, dailyStepGoal]); // Refresh when user or daily goal changes
+
   useEffect(() => {
     const saveToDevice = async () => {
       const todayString = getLocalDateString();
@@ -552,6 +721,28 @@ export default function HomeScreen() {
 
     return () => clearInterval(interval);
   }, []);
+
+  // Handle boost tooltip animations
+  useEffect(() => {
+    if (showBoostTooltip) {
+      // Show tooltip with animation
+      tooltipOpacity.value = withSpring(1, { damping: 20, stiffness: 300 });
+      tooltipScale.value = withSpring(1, { damping: 20, stiffness: 300 });
+      
+      // Auto-hide after 5 seconds
+      const timeout = setTimeout(() => {
+        tooltipOpacity.value = withSpring(0, { damping: 20, stiffness: 300 });
+        tooltipScale.value = withSpring(0.8, { damping: 20, stiffness: 300 });
+        setTimeout(() => setShowBoostTooltip(false), 300); // Wait for animation to complete
+      }, 5000);
+
+      return () => clearTimeout(timeout);
+    } else {
+      // Hide tooltip immediately
+      tooltipOpacity.value = 0;
+      tooltipScale.value = 0.8;
+    }
+  }, [showBoostTooltip]);
 
   const finalizePreviousDaySteps = async () => {
     if (isSyncing.current) return;
@@ -640,63 +831,17 @@ export default function HomeScreen() {
                   colors={['rgba(255,215,0,0.2)', 'rgba(255,193,7,0.15)']}
                   style={styles.coinGradient}
                 >
-                  <FontAwesome name="database" size={16} color="#FFD700" />
+                  <Image 
+                    source={require('../../assets/images/icon.png')}
+                    style={styles.coinIcon}
+                  />
                   <Text style={styles.coinText}>
-                    ₹ {totalEarnings >= 0 ? totalEarnings.toFixed(2) : '0.00'}
+                    {totalEarnings >= 0 ? totalEarnings.toFixed(2) : '0.00'}
                   </Text>
                 </LinearGradient>
               </Animated.View>
             </Pressable>
           </View>
-
-          {/* Boost Card */}
-          {isBoostActive && (
-            <LinearGradient
-              colors={['#8BC34A', '#689F38']}
-              style={styles.boostCard}
-            >
-              <Ionicons name="flash" size={16} color="#FFFFFF" />
-              <Text style={styles.boostTitle}>
-                🌅 {boostType?.toUpperCase()} BOOST ACTIVE!
-              </Text>
-              <Text style={styles.boostSubtitle}>Earning 2x coins!</Text>
-            </LinearGradient>
-          )}
-
-          {/* Mood Music Card */}
-          <Pressable
-            style={styles.moodCard}
-            onPress={() => setShowMoodModal(true)}
-          >
-            <LinearGradient
-              colors={['#667eea', '#764ba2']}
-              style={styles.moodGradient}
-            >
-              <View style={styles.moodContent}>
-                <View style={styles.moodHeader}>
-                  <Text style={styles.moodEmoji}>🎵</Text>
-                  <View style={styles.moodTextContainer}>
-                    <Text style={styles.moodTitle}>
-                      {currentSong ? `♫ ${currentSong.title}` : 'Play what your mood says'}
-                    </Text>
-                    <Text style={styles.moodSubtitle}>
-                      {currentSong 
-                        ? `${isPlaying ? 'Now Playing' : 'Paused'} • Tap to change mood`
-                        : `${availableMoods.length} mood${availableMoods.length !== 1 ? 's' : ''} available`
-                      }
-                    </Text>
-                  </View>
-                </View>
-                {getCurrentSpecialTime() && (
-                  <View style={styles.specialMoodIndicator}>
-                    <Text style={styles.specialMoodText}>
-                      ✨ {getCurrentSpecialTime() === 'sunrise' ? 'Sunrise' : 'Sunset'} vibes available!
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </LinearGradient>
-          </Pressable>
 
           {/* Spacer to restore gap between header and progress circle */}
           <View style={styles.spacer} />
@@ -749,6 +894,67 @@ export default function HomeScreen() {
             </LinearGradient>
           </View>
 
+          {/* Circular Boost Badge - positioned outside stepContainer */}
+          {isBoostActive && (
+            <TouchableOpacity 
+              style={styles.boostBadge}
+              onPress={handleBoostBadgeTap}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={boostType === 'sunrise' ? ['#FFD700', '#FFA000'] : ['#FF6B35', '#F7931E']}
+                style={styles.boostBadgeGradient}
+              >
+                <Ionicons 
+                  name="sunny" 
+                  size={28} 
+                  color="#FFFFFF" 
+                />
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+
+          {/* Circular Mood Badge - positioned on left side */}
+          <TouchableOpacity 
+            style={styles.moodBadge}
+            onPress={() => setShowMoodModal(true)}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={['#667eea', '#764ba2']}
+              style={styles.moodBadgeGradient}
+            >
+              <Ionicons 
+                name="musical-note" 
+                size={28} 
+                color="#FFFFFF" 
+              />
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* Boost Tooltip - positioned outside stepContainer */}
+          {showBoostTooltip && isBoostActive && (
+            <Animated.View 
+              style={[
+                styles.boostTooltip,
+                {
+                  opacity: tooltipOpacity,
+                  transform: [{ scale: tooltipScale }],
+                }
+              ]}
+            >
+              <View style={styles.boostTooltipContent}>
+                <Text style={styles.boostTooltipText}>
+                  {boostType === 'sunrise' ? 'Sunrise' : 'Sunset'} Boost
+                </Text>
+                <Text style={styles.boostTooltipSubtext}>
+                  2x Coin Multiplication Rate
+                </Text>
+              </View>
+              <View style={styles.boostTooltipArrow} />
+            </Animated.View>
+          )}
+
           {/* Weekly Progress Circles */}
           <View style={styles.weeklyContainer}>
             <Text style={styles.weeklyTitle}>This Week</Text>
@@ -766,14 +972,101 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Goal Display Only */}
-          <View style={styles.goalDisplayContainer}>
-            <Text style={styles.goalDisplayText}>
-              Daily Goal: {dailyStepGoal.toLocaleString()} steps
-            </Text>
-            <Text style={styles.goalEditHint}>
-              💡 Tap your profile to edit goal
-            </Text>
+          {/* Weekly Line Graph */}
+          <View style={styles.weeklyGraphContainer}>
+            <View style={styles.weeklyGraphBackground}>
+              <LinearGradient
+                colors={['#667eea', '#764ba2']}
+                style={styles.weeklyGraphGradient}
+              >
+                <Svg width="100%" height={200} viewBox="0 0 350 200" style={{ alignSelf: 'center' }}>
+                  <Defs>
+                    <SvgGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.8" />
+                      <Stop offset="100%" stopColor="#FFD700" stopOpacity="0.9" />
+                    </SvgGradient>
+                    <SvgGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.3" />
+                      <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.05" />
+                    </SvgGradient>
+                  </Defs>
+                  
+                  {/* Grid lines */}
+                  {[1, 2, 3, 4, 5].map((line) => (
+                    <Circle
+                      key={line}
+                      cx={50 + (line * 50)}
+                      cy={160}
+                      r="0.5"
+                      fill="rgba(255,255,255,0.3)"
+                    />
+                  ))}
+                  
+                  {/* Data line and points */}
+                  {weeklyData.length > 0 && (
+                    <>
+                      {/* Line path */}
+                      <Path
+                        d={weeklyData.map((day, index) => {
+                          const x = 50 + (index * 42);
+                          const maxSteps = Math.max(...weeklyData.map(d => d.steps), 1); // Use minimum of 1 to avoid division by zero
+                          const y = 160 - ((day.steps / maxSteps) * 120);
+                          return `${index === 0 ? 'M' : 'L'}${x},${y}`;
+                        }).join(' ')}
+                        stroke="url(#lineGradient)"
+                        strokeWidth="3"
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      
+                      {/* Area under curve */}
+                      <Path
+                        d={`${weeklyData.map((day, index) => {
+                          const x = 50 + (index * 42);
+                          const maxSteps = Math.max(...weeklyData.map(d => d.steps), 1); // Use minimum of 1 to avoid division by zero
+                          const y = 160 - ((day.steps / maxSteps) * 120);
+                          return `${index === 0 ? 'M' : 'L'}${x},${y}`;
+                        }).join(' ')} L${50 + ((weeklyData.length - 1) * 42)},160 L50,160 Z`}
+                        fill="url(#areaGradient)"
+                      />
+                      
+                      {/* Data points */}
+                      {weeklyData.map((day, index) => {
+                        const x = 50 + (index * 42);
+                        const maxSteps = Math.max(...weeklyData.map(d => d.steps), 1); // Use minimum of 1 to avoid division by zero
+                        const y = 160 - ((day.steps / maxSteps) * 120);
+                        return (
+                          <Circle
+                            key={index}
+                            cx={x}
+                            cy={y}
+                            r={day.isToday ? "8" : "6"}
+                            fill={day.isToday ? "#FFD700" : "#FFFFFF"}
+                            stroke={day.isToday ? "#FFFFFF" : "url(#lineGradient)"}
+                            strokeWidth="2"
+                          />
+                        );
+                      })}
+                    </>
+                  )}
+                </Svg>
+                
+                {/* Day labels */}
+                <View style={styles.weeklyGraphLabels}>
+                  {weeklyData.map((day, index) => (
+                    <View key={index} style={styles.weeklyGraphLabel}>
+                      <Text style={[styles.weeklyGraphDayText, day.isToday && styles.weeklyGraphTodayText]}>
+                        {day.dayLabel}
+                      </Text>
+                      <Text style={styles.weeklyGraphStepsText}>
+                        {day.steps >= 1000 ? `${(day.steps / 1000).toFixed(1)}K` : day.steps.toString()}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </LinearGradient>
+            </View>
           </View>
 
           {/* Rank Box */}
@@ -904,30 +1197,64 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,215,0,0.3)',
   },
+  coinIcon: {
+    width: 20,
+    height: 20,
+    tintColor: '#FFD700',
+  },
   coinText: {
     color: '#FFD700',
     fontSize: 14,
     fontWeight: '700',
     marginLeft: 6,
   },
-  boostCard: {
-    flexDirection: 'row',
+  boostBadge: {
+    position: 'absolute',
+    top: 120,
+    right: 60,
+    width: 30,
+    height: 60,
+    borderRadius: 30,
+    zIndex: 10,
+  },
+  boostBadgeGradient: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    padding: 12,
-    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  boostTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-    marginLeft: 8,
-    flex: 1,
+  moodBadge: {
+    position: 'absolute',
+    top: 120,
+    left: 30,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    zIndex: 10,
   },
-  boostSubtitle: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 11,
+  moodBadgeGradient: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   spacer: {
     height: 70,
@@ -1032,22 +1359,6 @@ const styles = StyleSheet.create({
     color: '#FFD700',
     fontWeight: '700',
   },
-  goalDisplayContainer: {
-    alignItems: 'center',
-    marginBottom: 30,
-    paddingHorizontal: 20,
-  },
-  goalDisplayText: {
-    fontSize: 16,
-    color: '#BBBBBB',
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  goalEditHint: {
-    fontSize: 12,
-    color: '#888888',
-    fontStyle: 'italic',
-  },
   rankBox: {
     marginHorizontal: 20,
     borderRadius: 16,
@@ -1089,10 +1400,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Mood Music Card Styles
-  moodCard: {
+  boostTooltip: {
+    position: 'absolute',
+    top: 50,
+    right: 50,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    minWidth: 160,
+    zIndex: 1000,
+  },
+  boostTooltipContent: {
+    alignItems: 'center',
+  },
+  boostTooltipText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  boostTooltipSubtext: {
+    color: '#CCCCCC',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  boostTooltipArrow: {
+    position: 'absolute',
+    bottom: -8,
+    right: 20,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 8,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: 'rgba(0, 0, 0, 0.8)',
+  },
+  weeklyGraphContainer: {
     marginHorizontal: 20,
-    marginBottom: 16,
+    marginBottom: 30,
+  },
+  weeklyGraphBackground: {
     borderRadius: 20,
     overflow: 'hidden',
     elevation: 8,
@@ -1101,45 +1451,33 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
   },
-  moodGradient: {
-    padding: 0,
+  weeklyGraphGradient: {
+    paddingTop: 20,
+    paddingBottom: 20,
+    paddingHorizontal: 15,
   },
-  moodContent: {
-    padding: 20,
-  },
-  moodHeader: {
+  weeklyGraphLabels: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    paddingHorizontal: 10,
+  },
+  weeklyGraphLabel: {
     alignItems: 'center',
-    gap: 16,
-  },
-  moodEmoji: {
-    fontSize: 28,
-  },
-  moodTextContainer: {
     flex: 1,
   },
-  moodTitle: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '700',
+  weeklyGraphDayText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 12,
+    fontWeight: '600',
     marginBottom: 4,
   },
-  moodSubtitle: {
-    color: 'rgba(255, 255, 255, 0.8)',
+  weeklyGraphTodayText: {
+    color: '#FFD700',
+  },
+  weeklyGraphStepsText: {
+    color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '500',
-  },
-  specialMoodIndicator: {
-    marginTop: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  specialMoodText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: '700',
   },
 });
