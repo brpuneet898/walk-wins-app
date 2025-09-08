@@ -976,18 +976,18 @@ export default function HomeScreen() {
           <View style={styles.weeklyGraphContainer}>
             <View style={styles.weeklyGraphBackground}>
               <LinearGradient
-                colors={['#667eea', '#764ba2']}
+                colors={['rgba(111, 175, 45, 0.3)', 'rgba(139, 195, 74, 0.2)']}
                 style={styles.weeklyGraphGradient}
               >
                 <Svg width="100%" height={200} viewBox="0 0 350 200" style={{ alignSelf: 'center' }}>
                   <Defs>
                     <SvgGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.8" />
-                      <Stop offset="100%" stopColor="#FFD700" stopOpacity="0.9" />
+                      <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.9" />
+                      <Stop offset="100%" stopColor="#8BC34A" stopOpacity="1" />
                     </SvgGradient>
                     <SvgGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.3" />
-                      <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.05" />
+                      <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.4" />
+                      <Stop offset="100%" stopColor="#4CAF50" stopOpacity="0.1" />
                     </SvgGradient>
                   </Defs>
                   
@@ -1043,7 +1043,7 @@ export default function HomeScreen() {
                             cy={y}
                             r={day.isToday ? "8" : "6"}
                             fill={day.isToday ? "#FFD700" : "#FFFFFF"}
-                            stroke={day.isToday ? "#FFFFFF" : "url(#lineGradient)"}
+                            stroke={day.isToday ? "#4CAF50" : "#8BC34A"}
                             strokeWidth="2"
                           />
                         );
