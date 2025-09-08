@@ -157,6 +157,7 @@ export default function HomeScreen() {
   const [userRank, setUserRank] = useState<number | null>(null);
   const [weeklyData, setWeeklyData] = useState<WeeklyDay[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null); // 👈 ADD: User profile state
+  const [showLineGraph, setShowLineGraph] = useState(false); // 👈 ADD: Line graph visibility state
   
   // Mood/Audio states
   const [showMoodModal, setShowMoodModal] = useState(false);
@@ -237,6 +238,7 @@ export default function HomeScreen() {
   // Fetch weekly data
   const fetchWeeklyData = async () => {
     console.log('[WEEKLY DATA] Starting to fetch weekly data...');
+    console.log('[WEEKLY DATA] Current todaysSteps value:', todaysSteps);
     try {
       const currentUser = currentAuth.currentUser;
       if (!currentUser) {
@@ -278,7 +280,7 @@ export default function HomeScreen() {
         if (isToday) {
           // For today, use the live todaysSteps value
           steps = todaysSteps;
-          console.log(`[WEEKLY DATA] ${dateString} (${dayLabel}): Using live todaysSteps=${steps}`);
+          console.log(`[WEEKLY DATA] ${dateString} (${dayLabel}): IS TODAY - Using live todaysSteps=${steps}`);
         } else {
           // For other days, check both Firestore and AsyncStorage
           try {
@@ -323,9 +325,12 @@ export default function HomeScreen() {
           goal: dailyStepGoal,
           isToday
         });
+
+        console.log(`[WEEKLY DATA] Added to weekData: ${dayLabel} = ${steps} steps (isToday: ${isToday})`);
       }
       
       console.log('[WEEKLY DATA] Final week data:', weekData.map(d => `${d.dayLabel}:${d.steps}`).join(', '));
+      console.log('[WEEKLY DATA] Setting weeklyData state...');
       setWeeklyData(weekData);
     } catch (error: any) {
       console.error('[WEEKLY DATA] Major error:', error.message);
@@ -675,10 +680,21 @@ export default function HomeScreen() {
 
   // Update weekly data when today's steps change
   useEffect(() => {
+    console.log('[WEEKLY UPDATE] todaysSteps changed to:', todaysSteps);
+    console.log('[WEEKLY UPDATE] Current weeklyData length:', weeklyData.length);
     if (weeklyData.length > 0) {
-      setWeeklyData(prev => prev.map(day => 
-        day.isToday ? { ...day, steps: todaysSteps } : day
-      ));
+      console.log('[WEEKLY UPDATE] Updating today\'s steps in weeklyData...');
+      const updatedData = weeklyData.map(day => {
+        if (day.isToday) {
+          console.log(`[WEEKLY UPDATE] Found today (${day.dayLabel}), updating steps from ${day.steps} to ${todaysSteps}`);
+          return { ...day, steps: todaysSteps };
+        }
+        return day;
+      });
+      console.log('[WEEKLY UPDATE] New weekly data:', updatedData.map(d => `${d.dayLabel}:${d.steps}`).join(', '));
+      setWeeklyData(updatedData);
+    } else {
+      console.log('[WEEKLY UPDATE] weeklyData is empty, skipping update');
     }
   }, [todaysSteps]);
 
@@ -792,6 +808,10 @@ export default function HomeScreen() {
   }));
   const progress = Math.min((todaysSteps / dailyStepGoal) * 100, 100);
   const formattedStepCount = todaysSteps.toLocaleString();
+
+  // Debug logging for line graph
+  console.log('[RENDER] Current weeklyData:', weeklyData.map(d => `${d.dayLabel}:${d.steps}(today:${d.isToday})`).join(', '));
+  console.log('[RENDER] Current todaysSteps:', todaysSteps);
 
   return (
     <View style={styles.page}>
@@ -970,16 +990,38 @@ export default function HomeScreen() {
                 />
               ))}
             </View>
+            
+            {/* Toggle Button for Line Graph */}
+            <TouchableOpacity 
+              style={styles.graphToggleButton}
+              onPress={() => setShowLineGraph(!showLineGraph)}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['rgba(139, 195, 74, 0.2)', 'rgba(76, 175, 80, 0.1)']}
+                style={styles.graphToggleGradient}
+              >
+                <Ionicons 
+                  name={showLineGraph ? "chevron-up" : "analytics"} 
+                  size={20} 
+                  color="#8BC34A" 
+                />
+                <Text style={styles.graphToggleText}>
+                  {showLineGraph ? "Hide Trend" : "Show Trend"}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
 
-          {/* Weekly Line Graph */}
-          <View style={styles.weeklyGraphContainer}>
-            <View style={styles.weeklyGraphBackground}>
-              <LinearGradient
-                colors={['rgba(111, 175, 45, 0.3)', 'rgba(139, 195, 74, 0.2)']}
-                style={styles.weeklyGraphGradient}
-              >
-                <Svg width="100%" height={200} viewBox="0 0 350 200" style={{ alignSelf: 'center' }}>
+          {/* Weekly Line Graph - Conditional Render */}
+          {showLineGraph && (
+            <View style={styles.weeklyGraphContainer}>
+              <View style={styles.weeklyGraphBackground}>
+                <LinearGradient
+                  colors={['rgba(111, 175, 45, 0.3)', 'rgba(139, 195, 74, 0.2)']}
+                  style={styles.weeklyGraphGradient}
+                >
+                  <Svg width="100%" height={200} viewBox="0 0 350 200" style={{ alignSelf: 'center' }}>
                   <Defs>
                     <SvgGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
                       <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.9" />
@@ -1011,6 +1053,7 @@ export default function HomeScreen() {
                           const x = 50 + (index * 42);
                           const maxSteps = Math.max(...weeklyData.map(d => d.steps), 1); // Use minimum of 1 to avoid division by zero
                           const y = 160 - ((day.steps / maxSteps) * 120);
+                          console.log(`[LINE GRAPH] ${day.dayLabel} (${day.isToday ? 'TODAY' : 'other'}): steps=${day.steps}, maxSteps=${maxSteps}, x=${x}, y=${y}`);
                           return `${index === 0 ? 'M' : 'L'}${x},${y}`;
                         }).join(' ')}
                         stroke="url(#lineGradient)"
@@ -1068,6 +1111,7 @@ export default function HomeScreen() {
               </LinearGradient>
             </View>
           </View>
+          )}
 
           {/* Rank Box */}
           <Pressable style={styles.rankBox} onPress={() => router.push('/leaderboard')}>
@@ -1479,5 +1523,29 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
+  },
+  graphToggleButton: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 15,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  graphToggleGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  graphToggleText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });
