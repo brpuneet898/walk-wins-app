@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { useSteps } from '../../context/StepContext';
+import { useLevelSystem } from '../../context/LevelContext';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -94,6 +95,7 @@ const AnimatedBackground = () => {
 
 export default function RewardsScreen() {
   const { coins = 0, lifetimeSteps = 0, boostSteps = 0 } = useSteps() as any;
+  const { currentLevel } = useLevelSystem();
 
   return (
     <LinearGradient
@@ -126,7 +128,7 @@ export default function RewardsScreen() {
               />
             </MaskedView>
             <GradientText style={styles.pointsText}>
-              {calculateTotalEarnings(lifetimeSteps, coins, boostSteps).toFixed(2)}
+              {calculateTotalEarnings(lifetimeSteps, coins, boostSteps, currentLevel).toFixed(2)}
             </GradientText>
           </View>
           <Text style={styles.pointsSubtext}>From walking & challenges</Text>

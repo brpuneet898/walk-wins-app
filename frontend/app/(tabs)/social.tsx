@@ -33,7 +33,7 @@ export default function SocialScreen() {
   const [challengeStartSteps, setChallengeStartSteps] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [hasClaimedReward, setHasClaimedReward] = useState(false);
-  const { isLoggingOut, coins = 0, setCoins } = useSteps();
+  const { isLoggingOut, coins = 0, setCoins, dailyRecords } = useSteps();
 
   // Join challenge function
   const joinChallenge = async () => {
@@ -173,39 +173,38 @@ export default function SocialScreen() {
     const initializeDailyData = async () => {
       const today = getLocalDateString();
       
-      // Load today's steps
-      const storedData = await AsyncStorage.getItem(`dailySteps_${today}`);
-      const initialTodaysSteps = storedData ? parseInt(storedData, 10) : 0;
-      setTodaysSteps(initialTodaysSteps);
+      // Get today's steps from dailyRecords (synced from Firebase)
+      const todayRecord = dailyRecords.find(record => record.id === today);
+      const currentSteps = todayRecord ? todayRecord.steps : 0;
+      setTodaysSteps(currentSteps);
 
-    // Generate daily challenge
-    //   const challenge = 10;
-    const challenge = generateDailyChallenge();
-    setDailyChallenge(challenge);
+      // Generate daily challenge
+      const challenge = generateDailyChallenge();
+      setDailyChallenge(challenge);
       
       // Check if user has joined today's challenge
       await checkChallengeStatus();
     };
 
     initializeDailyData();
-  }, []);
+  }, [dailyRecords]);
 
   // Update steps in real-time (only if challenge is joined)
   useEffect(() => {
     if (!hasJoinedChallenge) return;
     
-    const updateSteps = async () => {
+    const updateSteps = () => {
       if (!isLoggingOut) {
         const today = getLocalDateString();
-        const storedData = await AsyncStorage.getItem(`dailySteps_${today}`);
-        const currentSteps = storedData ? parseInt(storedData, 10) : 0;
+        const todayRecord = dailyRecords.find(record => record.id === today);
+        const currentSteps = todayRecord ? todayRecord.steps : 0;
         setTodaysSteps(currentSteps);
       }
     };
 
-    const interval = setInterval(updateSteps, 1000);
+    const interval = setInterval(updateSteps, 2000); // Update every 2 seconds for challenges
     return () => clearInterval(interval);
-  }, [isLoggingOut, hasJoinedChallenge]);
+  }, [isLoggingOut, hasJoinedChallenge, dailyRecords]);
 
   // Calculate progress (only steps taken after joining)
   const challengeSteps = Math.max(todaysSteps - challengeStartSteps, 0);

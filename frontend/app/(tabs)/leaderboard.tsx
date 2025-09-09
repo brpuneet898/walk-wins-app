@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, FlatList, StatusBar, ScrollView, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSteps } from '../../context/StepContext';
+import { useLeaderboard } from '../../context/LeaderboardContext';
 // ⭐️ 1. Import Ionicons instead of FontAwesome
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
@@ -200,7 +201,7 @@ const AnimatedLeaderboardItem = ({ item, index }: { item: any; index: number }) 
 };
 
 export default function LeaderboardScreen() {
-  const { leaderboardData } = useSteps();
+  const { leaderboardData } = useLeaderboard();
 
   const renderItem = ({ item, index }: { item: typeof leaderboardData[0]; index: number }) => (
     <AnimatedLeaderboardItem item={item} index={index} />
