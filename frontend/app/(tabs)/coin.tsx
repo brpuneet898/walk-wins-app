@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Modal, ActivityIndicator, Image } from 'react-native';
 import { useSteps } from '../../context/StepContext';
 import Animated, {
   useSharedValue,
@@ -197,9 +197,26 @@ export default function CoinScreen() {
 
       <View style={styles.summaryBox}>
         <Text style={styles.summaryLabel}>Total Earned</Text>
-        <GradientText style={styles.totalEarnedText}>
-          ₹{totalEarned.toFixed(2)}
-        </GradientText>
+        <View style={styles.earningsContainer}>
+          <MaskedView 
+            maskElement={
+              <Image 
+                source={require('../../assets/images/icon.png')}
+                style={styles.earningsIcon}
+              />
+            }
+          >
+            <LinearGradient
+              colors={['#00c6ff', '#0072ff']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.earningsIcon}
+            />
+          </MaskedView>
+          <GradientText style={styles.totalEarnedText}>
+            {totalEarned.toFixed(2)}
+          </GradientText>
+        </View>
         <Text style={styles.lifetimeStepsText}>Based on {lifetimeSteps} lifetime steps</Text>
       </View>
 
@@ -318,10 +335,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9CA3AF',
   },
+  earningsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 10,
+  },
+  earningsIcon: {
+    width: 40,
+    height: 40,
+    marginRight: 8,
+  },
   totalEarnedText: {
     fontSize: 36,
     fontWeight: 'bold',
-    marginVertical: 10,
   },
   lifetimeStepsText: {
     fontSize: 12,

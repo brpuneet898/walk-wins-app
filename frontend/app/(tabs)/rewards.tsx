@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { useSteps } from '../../context/StepContext';
 import Animated, {
   useSharedValue,
@@ -109,9 +109,26 @@ export default function RewardsScreen() {
         <View style={styles.pointsBox}>
           <IconSymbol name="gift.fill" size={40} color="#FFD700" />
           <Text style={styles.pointsLabel}>Your Total Earnings</Text>
-          <GradientText style={styles.pointsText}>
-            ₹{calculateTotalEarnings(lifetimeSteps, coins, boostSteps).toFixed(2)}
-          </GradientText>
+          <View style={styles.earningsContainer}>
+            <MaskedView 
+              maskElement={
+                <Image 
+                  source={require('../../assets/images/icon.png')}
+                  style={styles.earningsIcon}
+                />
+              }
+            >
+              <LinearGradient
+                colors={['#00c6ff', '#0072ff']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.earningsIcon}
+              />
+            </MaskedView>
+            <GradientText style={styles.pointsText}>
+              {calculateTotalEarnings(lifetimeSteps, coins, boostSteps).toFixed(2)}
+            </GradientText>
+          </View>
           <Text style={styles.pointsSubtext}>From walking & challenges</Text>
         </View>
 
@@ -282,10 +299,20 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 12,
   },
+  earningsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 8,
+  },
+  earningsIcon: {
+    width: 40,
+    height: 40,
+    marginRight: 8,
+  },
   pointsText: {
     fontSize: 42,
     fontWeight: 'bold',
-    marginVertical: 8,
   },
   pointsSubtext: {
     fontSize: 12,
