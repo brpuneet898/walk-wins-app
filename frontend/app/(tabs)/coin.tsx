@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Modal, ActivityIndicator, Image } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Modal, ActivityIndicator, Image, TextInput, Alert, ScrollView } from 'react-native';
 import { useSteps } from '../../context/StepContext';
 import Animated, {
   useSharedValue,
@@ -88,6 +88,13 @@ export default function CoinScreen() {
   const [isWatching, setIsWatching] = useState(false);
   const [showAdModal, setShowAdModal] = useState(false);
   const [adLoading, setAdLoading] = useState(true);
+  const [showWithdrawForm, setShowWithdrawForm] = useState(false);
+  const [paymentDetails, setPaymentDetails] = useState('');
+  const [selectedAmount, setSelectedAmount] = useState(100);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Predefined withdrawal amounts
+  const withdrawalAmounts = [100, 500, 1000, 2000, 4000, 8000, 10000];
   
   // Calculate earnings with level system
   const totalEarned = calculateTotalEarnings(lifetimeSteps, coins, boostSteps, currentLevel);
@@ -145,6 +152,43 @@ export default function CoinScreen() {
         setIsWatching(false);
         setShowAdModal(false);
       }
+    }
+  };
+
+  // Handle withdrawal form submission
+  const handleWithdrawSubmit = async () => {
+    if (!paymentDetails.trim()) {
+      Alert.alert('Error', 'Please enter your UPI ID or phone number');
+      return;
+    }
+
+    // Check if user has enough coins
+    if (selectedAmount > coins) {
+      Alert.alert('Insufficient Coins', `You need ${selectedAmount} coins but only have ${coins} coins.`);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // @ts-ignore
+      const currentAuth: any = auth;
+      const user = currentAuth.currentUser;
+      if (user) {
+        const userDocRef = doc(db, 'users', user.uid);
+        await updateDoc(userDocRef, {
+          payment_details: paymentDetails.trim(),
+          withdraw_amount: selectedAmount,
+        });
+        Alert.alert('Success', 'Your withdrawal request has been submitted successfully!');
+        setShowWithdrawForm(false);
+        setPaymentDetails('');
+        setSelectedAmount(100);
+      }
+    } catch (err) {
+      console.error('Failed to save withdrawal details:', err);
+      Alert.alert('Error', 'Failed to submit withdrawal request. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -234,6 +278,99 @@ export default function CoinScreen() {
         </Pressable>
       </View>
 
+      {/* Withdrawal Section */}
+      {!showWithdrawForm ? (
+        <View style={styles.withdrawBox}>
+          <Text style={styles.withdrawTitle}>Withdraw Earnings</Text>
+          <Text style={styles.withdrawSubtitle}>Convert your earnings to cash</Text>
+          <Pressable onPress={() => setShowWithdrawForm(true)} style={styles.withdrawButton}>
+            <LinearGradient
+              colors={['#8BC34A', '#4CAF50']}
+              style={styles.withdrawButtonGradient}
+            >
+              <Text style={styles.withdrawButtonText}>Withdraw</Text>
+            </LinearGradient>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.withdrawFormBox}>
+          <Text style={styles.withdrawFormTitle}>Enter Payment Details</Text>
+          <TextInput
+            style={styles.paymentInput}
+            placeholder="Enter UPI ID or Phone Number"
+            placeholderTextColor="#9CA3AF"
+            value={paymentDetails}
+            onChangeText={setPaymentDetails}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          
+          <Text style={styles.amountTitle}>Select Withdrawal Amount</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.amountScroller}
+            contentContainerStyle={styles.amountScrollerContent}
+          >
+            {withdrawalAmounts.map((amount) => (
+              <Pressable
+                key={amount}
+                style={[
+                  styles.amountButton,
+                  selectedAmount === amount && styles.amountButtonSelected,
+                  amount > coins && styles.amountButtonDisabled
+                ]}
+                onPress={() => amount <= coins && setSelectedAmount(amount)}
+                disabled={amount > coins}
+              >
+                <Text style={[
+                  styles.amountButtonText,
+                  selectedAmount === amount && styles.amountButtonTextSelected,
+                  amount > coins && styles.amountButtonTextDisabled
+                ]}>
+                  ₹{amount}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+          
+          <Text style={styles.selectedAmountText}>
+            Selected: ₹{selectedAmount} (Available: {coins} coins)
+          </Text>
+          
+          <View style={styles.formButtonsContainer}>
+            <Pressable 
+              onPress={() => {
+                setShowWithdrawForm(false);
+                setPaymentDetails('');
+                setSelectedAmount(100);
+              }} 
+              style={styles.cancelButton}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable 
+              onPress={handleWithdrawSubmit} 
+              disabled={isSubmitting || selectedAmount > coins}
+              style={styles.submitButton}
+            >
+              <LinearGradient
+                colors={
+                  isSubmitting || selectedAmount > coins 
+                    ? ['#666666', '#999999'] 
+                    : ['#8BC34A', '#4CAF50']
+                }
+                style={styles.submitButtonGradient}
+              >
+                <Text style={styles.submitButtonText}>
+                  {isSubmitting ? 'Submitting...' : 'Submit'}
+                </Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       {/* Ad modal with WebView */}
       <Modal
         visible={showAdModal}
@@ -268,21 +405,6 @@ export default function CoinScreen() {
           />
         </View>
       </Modal>
-
-      <View style={styles.infoContainer}>
-        <LinearGradient
-          colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
-          style={styles.infoBox}
-        >
-          <Text style={styles.infoTitle}>How Earnings Work</Text>
-          <Text style={styles.infoText}>
-            • You earn ₹0.01 per step walked{'\n'}
-            • Daily step tracking adds to lifetime total{'\n'}
-            • Referral bonuses boost your earnings{'\n'}
-            • Check your daily history in Profile tab
-          </Text>
-        </LinearGradient>
-      </View>
     </LinearGradient>
   );
 }
@@ -354,31 +476,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
   },
-  infoContainer: {
-    marginHorizontal: 15,
-    marginTop: 20,
-  },
-  infoBox: {
-    padding: 25,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 15,
-    textAlign: 'center',
-  },
-  infoText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    lineHeight: 22,
-  },
   adBox: {
     marginHorizontal: 15,
-    marginBottom: 20,
+    marginBottom: 30,
     padding: 16,
     borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.03)',
@@ -437,5 +537,142 @@ const styles = StyleSheet.create({
   webview: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  withdrawBox: {
+    marginHorizontal: 15,
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  withdrawTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  withdrawSubtitle: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 6,
+  },
+  withdrawButton: {
+    marginTop: 12,
+  },
+  withdrawButtonGradient: {
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  withdrawButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  withdrawFormBox: {
+    marginHorizontal: 15,
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  withdrawFormTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 12,
+  },
+  paymentInput: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#FFFFFF',
+    fontSize: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  formButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  cancelButton: {
+    flex: 1,
+    marginRight: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  cancelButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  submitButton: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  submitButtonGradient: {
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  submitButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  amountTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  amountScroller: {
+    marginBottom: 12,
+  },
+  amountScrollerContent: {
+    paddingHorizontal: 4,
+  },
+  amountButton: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    minWidth: 70,
+    alignItems: 'center',
+  },
+  amountButtonSelected: {
+    backgroundColor: 'rgba(139, 195, 74, 0.3)',
+    borderColor: '#8BC34A',
+  },
+  amountButtonDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  amountButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  amountButtonTextSelected: {
+    color: '#8BC34A',
+  },
+  amountButtonTextDisabled: {
+    color: '#666666',
+  },
+  selectedAmountText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginBottom: 16,
   },
 });
