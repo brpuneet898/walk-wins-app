@@ -160,6 +160,8 @@ export default function HomeScreen() {
   const [isWeeklyDataLoading, setIsWeeklyDataLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<any>(null); // 👈 ADD: User profile state
   const [showLineGraph, setShowLineGraph] = useState(false); // 👈 ADD: Line graph visibility state
+  const [totalEarnings, setTotalEarnings] = useState<number>(0);
+  const [isEarningsLoading, setIsEarningsLoading] = useState<boolean>(true);
   
   // Mood/Audio states
   const [showMoodModal, setShowMoodModal] = useState(false);
@@ -307,9 +309,26 @@ export default function HomeScreen() {
     return null;
   };
 
-  const totalEarnings = calculateTotalEarnings(lifetimeSteps, coins, ctxBoostSteps, currentLevel);
+  // Fetch earnings asynchronously
+  const fetchEarnings = async () => {
+    try {
+      setIsEarningsLoading(true);
+      const earnings = await calculateTotalEarnings(lifetimeSteps, coins, ctxBoostSteps, currentLevel);
+      setTotalEarnings(earnings);
+    } catch (error) {
+      console.error('Error fetching earnings:', error);
+      setTotalEarnings(0);
+    } finally {
+      setIsEarningsLoading(false);
+    }
+  };
 
-  // boostSteps now comes from StepContext (real-time via onSnapshot)
+  // Fetch earnings when component mounts or dependencies change
+  useEffect(() => {
+    if (currentAuth.currentUser) {
+      fetchEarnings();
+    }
+  }, [lifetimeSteps, coins, ctxBoostSteps, currentLevel, currentAuth.currentUser]);
 
   // 👈 ADD: Fetch user profile data
   const fetchUserProfile = async () => {
@@ -1343,7 +1362,7 @@ export default function HomeScreen() {
                     style={styles.coinIcon}
                   />
                   <Text style={styles.coinText}>
-                    {totalEarnings >= 0 ? totalEarnings.toFixed(2) : '0.00'}
+                    {isEarningsLoading ? '...' : (totalEarnings >= 0 ? totalEarnings.toFixed(2) : '0.00')}
                   </Text>
                 </LinearGradient>
               </Animated.View>

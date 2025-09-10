@@ -158,9 +158,25 @@ export default function CoinScreen() {
   };
   
   // Calculate earnings with level system
-  const totalEarned = calculateTotalEarnings(lifetimeSteps, coins, boostSteps, currentLevel);
-  const stepEarnings = calculateStepEarnings(lifetimeSteps, boostSteps, currentLevel);
-  const bonusEarnings = calculateBonusEarnings(coins);
+  const [totalEarned, setTotalEarned] = useState(0);
+  const [earningsLoading, setEarningsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadEarnings = async () => {
+      try {
+        setEarningsLoading(true);
+        const earned = await calculateTotalEarnings(lifetimeSteps, coins, boostSteps, currentLevel);
+        setTotalEarned(earned);
+      } catch (error) {
+        console.error('Error calculating earnings:', error);
+        setTotalEarned(0);
+      } finally {
+        setEarningsLoading(false);
+      }
+    };
+
+    loadEarnings();
+  }, [lifetimeSteps, coins, boostSteps, currentLevel]);
   
   // Put your YouTube link (shorts or regular) here. Examples:
   // 'https://www.youtube.com/shorts/VIDEOID', 'https://youtu.be/VIDEOID', or full watch URL
@@ -347,7 +363,7 @@ export default function CoinScreen() {
             />
           </MaskedView>
           <GradientText style={styles.totalEarnedText}>
-            {totalEarned.toFixed(2)}
+            {earningsLoading ? '...' : totalEarned.toFixed(2)}
           </GradientText>
         </View>
         <Text style={styles.lifetimeStepsText}>Based on {lifetimeSteps} lifetime steps</Text>

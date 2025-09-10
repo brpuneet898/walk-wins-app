@@ -96,6 +96,25 @@ const AnimatedBackground = () => {
 export default function RewardsScreen() {
   const { coins = 0, lifetimeSteps = 0, boostSteps = 0 } = useSteps() as any;
   const { currentLevel } = useLevelSystem();
+  const [totalEarned, setTotalEarned] = useState(0);
+  const [earningsLoading, setEarningsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadEarnings = async () => {
+      try {
+        setEarningsLoading(true);
+        const earned = await calculateTotalEarnings(lifetimeSteps, coins, boostSteps, currentLevel);
+        setTotalEarned(earned);
+      } catch (error) {
+        console.error('Error calculating earnings:', error);
+        setTotalEarned(0);
+      } finally {
+        setEarningsLoading(false);
+      }
+    };
+
+    loadEarnings();
+  }, [lifetimeSteps, coins, boostSteps, currentLevel]);
 
   return (
     <LinearGradient
@@ -128,7 +147,7 @@ export default function RewardsScreen() {
               />
             </MaskedView>
             <GradientText style={styles.pointsText}>
-              {calculateTotalEarnings(lifetimeSteps, coins, boostSteps, currentLevel).toFixed(2)}
+              {earningsLoading ? '...' : totalEarned.toFixed(2)}
             </GradientText>
           </View>
           <Text style={styles.pointsSubtext}>From walking & challenges</Text>
