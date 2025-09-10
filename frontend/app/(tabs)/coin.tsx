@@ -94,7 +94,7 @@ export default function CoinScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Available withdrawal amounts
-  const withdrawalAmounts = [2, 10, 20, 100, 500, 1000, 2000, 4000, 5000, 10000];
+  const withdrawalAmounts = [100, 500, 1000, 2000, 4000, 5000, 10000];
   
   // Calculate earnings with level system
   const totalEarned = calculateTotalEarnings(lifetimeSteps, coins, boostSteps, currentLevel);
