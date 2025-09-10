@@ -93,8 +93,8 @@ export default function CoinScreen() {
   const [selectedAmount, setSelectedAmount] = useState(100);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Predefined withdrawal amounts
-  const withdrawalAmounts = [100, 500, 1000, 2000, 4000, 8000, 10000];
+  // Available withdrawal amounts
+  const withdrawalAmounts = [2, 10, 20, 100, 500, 1000, 2000, 4000, 5000, 10000];
   
   // Calculate earnings with level system
   const totalEarned = calculateTotalEarnings(lifetimeSteps, coins, boostSteps, currentLevel);
@@ -162,9 +162,8 @@ export default function CoinScreen() {
       return;
     }
 
-    // Check if user has enough coins
-    if (selectedAmount > coins) {
-      Alert.alert('Insufficient Coins', `You need ${selectedAmount} coins but only have ${coins} coins.`);
+    if (selectedAmount > totalEarned) {
+      Alert.alert('Error', `You can only withdraw up to ₹${totalEarned.toFixed(2)}`);
       return;
     }
 
@@ -179,7 +178,7 @@ export default function CoinScreen() {
           payment_details: paymentDetails.trim(),
           withdraw_amount: selectedAmount,
         });
-        Alert.alert('Success', 'Your withdrawal request has been submitted successfully!');
+        Alert.alert('Success', 'Your request has been proceeded. You\'ll receive the withdrawal amount within 48 hours');
         setShowWithdrawForm(false);
         setPaymentDetails('');
         setSelectedAmount(100);
@@ -305,12 +304,12 @@ export default function CoinScreen() {
             autoCorrect={false}
           />
           
-          <Text style={styles.amountTitle}>Select Withdrawal Amount</Text>
+          <Text style={styles.amountSelectorTitle}>Select Withdrawal Amount</Text>
           <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false}
-            style={styles.amountScroller}
-            contentContainerStyle={styles.amountScrollerContent}
+            style={styles.amountScrollView}
+            contentContainerStyle={styles.amountScrollContent}
           >
             {withdrawalAmounts.map((amount) => (
               <Pressable
@@ -318,15 +317,15 @@ export default function CoinScreen() {
                 style={[
                   styles.amountButton,
                   selectedAmount === amount && styles.amountButtonSelected,
-                  amount > coins && styles.amountButtonDisabled
+                  amount > totalEarned && styles.amountButtonDisabled
                 ]}
-                onPress={() => amount <= coins && setSelectedAmount(amount)}
-                disabled={amount > coins}
+                onPress={() => amount <= totalEarned && setSelectedAmount(amount)}
+                disabled={amount > totalEarned}
               >
                 <Text style={[
                   styles.amountButtonText,
                   selectedAmount === amount && styles.amountButtonTextSelected,
-                  amount > coins && styles.amountButtonTextDisabled
+                  amount > totalEarned && styles.amountButtonTextDisabled
                 ]}>
                   ₹{amount}
                 </Text>
@@ -334,8 +333,8 @@ export default function CoinScreen() {
             ))}
           </ScrollView>
           
-          <Text style={styles.selectedAmountText}>
-            Selected: ₹{selectedAmount} (Available: {coins} coins)
+          <Text style={styles.availableBalanceText}>
+            Available Balance: ₹{totalEarned.toFixed(2)}
           </Text>
           
           <View style={styles.formButtonsContainer}>
@@ -351,13 +350,13 @@ export default function CoinScreen() {
             </Pressable>
             <Pressable 
               onPress={handleWithdrawSubmit} 
-              disabled={isSubmitting || selectedAmount > coins}
+              disabled={isSubmitting || selectedAmount > totalEarned}
               style={styles.submitButton}
             >
               <LinearGradient
                 colors={
-                  isSubmitting || selectedAmount > coins 
-                    ? ['#666666', '#999999'] 
+                  isSubmitting || selectedAmount > totalEarned 
+                    ? ['#94D3A2', '#7CC47F'] 
                     : ['#8BC34A', '#4CAF50']
                 }
                 style={styles.submitButtonGradient}
@@ -626,17 +625,17 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
   },
-  amountTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+  amountSelectorTitle: {
+    fontSize: 16,
+    fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 12,
     marginTop: 8,
   },
-  amountScroller: {
+  amountScrollView: {
     marginBottom: 12,
   },
-  amountScrollerContent: {
+  amountScrollContent: {
     paddingHorizontal: 4,
   },
   amountButton: {
@@ -647,30 +646,32 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
-    minWidth: 70,
+    minWidth: 80,
     alignItems: 'center',
   },
   amountButtonSelected: {
-    backgroundColor: 'rgba(139, 195, 74, 0.3)',
+    backgroundColor: '#8BC34A',
     borderColor: '#8BC34A',
   },
   amountButtonDisabled: {
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderColor: 'rgba(255,255,255,0.1)',
+    opacity: 0.5,
   },
   amountButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
   },
   amountButtonTextSelected: {
-    color: '#8BC34A',
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   amountButtonTextDisabled: {
-    color: '#666666',
+    color: '#9CA3AF',
   },
-  selectedAmountText: {
-    fontSize: 12,
+  availableBalanceText: {
+    fontSize: 14,
     color: '#9CA3AF',
     textAlign: 'center',
     marginBottom: 16,
