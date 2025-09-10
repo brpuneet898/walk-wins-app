@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert, ScrollView, FlatList } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, ScrollView, FlatList, Modal, ActivityIndicator } from 'react-native';
 import { auth, db } from '../../firebaseConfig';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, increment } from 'firebase/firestore';
 import { useSteps } from '../../context/StepContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome, Ionicons } from '@expo/vector-icons';
@@ -19,14 +19,37 @@ import { useLevelSystem, useLevelCalculations } from '../../context/LevelContext
 import LevelBadge from '../../components/LevelBadge';
 import LevelInfoModal from '../../components/LevelInfoModal';
 import LevelUpModal from '../../components/LevelUpModal';
+// WebView for milestone ad
+// @ts-ignore
+import { WebView } from 'react-native-webview';
+
+// User profile type
+interface UserProfile {
+  username?: string;
+  referralCode?: string;
+  totalReferrals?: number;
+  dailyStepGoal?: number;
+  lifetimeSteps?: number;
+  lifetimeTotalSteps?: number;
+  currentLevel?: number;
+  lastAdMilestoneClaimed?: number;
+  coins?: number;
+}
 
 export default function ProfileScreen() {
-  const { setIsLoggingOut, dailyRecords = [] } = useSteps();
+  const { setIsLoggingOut, dailyRecords = [], coins, setCoins } = useSteps();
   const router = useRouter();
   const user = auth.currentUser;
-  const [userProfile, setUserProfile] = useState(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [dailyStepGoal, setDailyStepGoal] = useState(3000);
   const [sliderValue, setSliderValue] = useState(3000);
+
+  // Milestone Ad states
+  const [showMilestoneAd, setShowMilestoneAd] = useState(false);
+  const [currentMilestone, setCurrentMilestone] = useState(0);
+  const [isWatchingMilestoneAd, setIsWatchingMilestoneAd] = useState(false);
+  const [milestoneAdModalVisible, setMilestoneAdModalVisible] = useState(false);
+  const [milestoneAdLoading, setMilestoneAdLoading] = useState(true);
 
   // Level system hooks and state
   const { 
@@ -90,7 +113,7 @@ export default function ProfileScreen() {
       'Z': { background: 'rgba(196,69,105,0.2)', border: '#C44569', text: '#C44569' },
     };
     
-    return colorMap[initial] || { background: 'rgba(139,195,74,0.2)', border: '#8BC34A', text: '#8BC34A' };
+    return (colorMap as any)[initial] || { background: 'rgba(139,195,74,0.2)', border: '#8BC34A', text: '#8BC34A' };
   };
 
   useEffect(() => {
@@ -117,7 +140,14 @@ export default function ProfileScreen() {
     fetchUserProfile();
   }, [user, initializeUserLevel]);
 
-  const updateGoalInDatabase = async (newGoal) => {
+  // Check milestone ad visibility when lifetime steps or user profile changes
+  useEffect(() => {
+    if (lifetimeSteps && userProfile) {
+      checkMilestoneAdVisibility();
+    }
+  }, [lifetimeSteps, userProfile]);
+
+  const updateGoalInDatabase = async (newGoal: number) => {
     const currentUser = auth.currentUser;
     if (currentUser) {
       const userDocRef = doc(db, 'users', currentUser.uid);
@@ -130,13 +160,13 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleSliderChange = (value) => {
+  const handleSliderChange = (value: number) => {
     const roundedValue = Math.round(value / 100) * 100; // Round to nearest 100
     const clampedValue = Math.max(3000, roundedValue); // Minimum 3000 steps
     setSliderValue(clampedValue);
   };
 
-  const handleSliderComplete = async (value) => {
+  const handleSliderComplete = async (value: number) => {
     const roundedValue = Math.round(value / 100) * 100;
     const clampedValue = Math.max(3000, roundedValue);
     setDailyStepGoal(clampedValue);
@@ -144,7 +174,7 @@ export default function ProfileScreen() {
     await updateGoalInDatabase(clampedValue);
   };
 
-  const setPresetGoal = async (goal) => {
+  const setPresetGoal = async (goal: number) => {
     // Animate button press
     buttonScale.value = withSpring(0.95, {}, () => {
       buttonScale.value = withSpring(1);
@@ -178,6 +208,131 @@ export default function ProfileScreen() {
       Alert.alert('Your Referral Code', userProfile.referralCode, [
         { text: 'OK', style: 'default' }
       ]);
+    }
+  };
+
+  // Milestone Ad Functions
+  const calculateCurrentMilestone = (lifetimeSteps: number) => {
+    return Math.floor(lifetimeSteps / 3000) * 3000;
+  };
+
+  const checkMilestoneAdVisibility = async () => {
+    if (!user || !lifetimeSteps) return;
+
+    const milestone = calculateCurrentMilestone(lifetimeSteps);
+    const lastClaimed = userProfile?.lastAdMilestoneClaimed || 0;
+
+    // Show ad if user reached a new milestone and hasn't claimed it yet
+    const shouldShow = lifetimeSteps >= milestone && milestone > lastClaimed;
+    
+    setCurrentMilestone(milestone);
+    setShowMilestoneAd(shouldShow);
+  };
+
+  // Put your YouTube link (shorts or regular) here. Examples:
+  // 'https://www.youtube.com/shorts/VIDEOID', 'https://youtu.be/VIDEOID', or full watch URL
+  const YT_LINK = 'https://www.youtube.com/shorts/ie_l0AJe13o';
+
+  function extractYouTubeID(url: string) {
+    // Matches youtu.be/ID, /watch?v=ID, /shorts/ID, /embed/ID or raw 11-char ID
+    const m = url.match(/(?:youtu\.be\/|v=|\/shorts\/|\/embed\/)?([0-9A-Za-z_-]{11})/);
+    return m ? m[1] : url;
+  }
+
+  const YT_VIDEO_ID = extractYouTubeID(YT_LINK);
+
+  // Milestone Ad HTML (same as coin.tsx)
+  const milestoneAdHTML = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0">
+        <style>html,body,#player{height:100%;margin:0;background:black}</style>
+      </head>
+      <body>
+        <div id="player"></div>
+        <script>
+          var tag = document.createElement('script');
+          tag.src = "https://www.youtube.com/iframe_api";
+          var firstScriptTag = document.getElementsByTagName('script')[0];
+          firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+          var player;
+          function onYouTubeIframeAPIReady() {
+            player = new YT.Player('player', {
+              height: '100%',
+              width: '100%',
+              videoId: '${YT_VIDEO_ID}',
+              playerVars: { 'playsinline': 1, 'controls': 0, 'rel': 0, 'modestbranding': 1, 'autoplay': 1, 'start': 0, 'end': 5 },
+              events: {
+                'onStateChange': onPlayerStateChange
+              }
+            });
+            try { player.playVideo && player.playVideo(); } catch(e) { }
+          }
+          function onPlayerStateChange(event) {
+            if (event.data == YT.PlayerState.ENDED) {
+              window.ReactNativeWebView.postMessage('ended');
+            }
+          }
+        </script>
+      </body>
+    </html>
+  `;
+
+  const handleWatchMilestoneAd = () => {
+    if (isWatchingMilestoneAd) return;
+    setIsWatchingMilestoneAd(true);
+    setMilestoneAdLoading(true);
+    setMilestoneAdModalVisible(true);
+  };
+
+  const onMilestoneAdMessage = async (event: any) => {
+    const data = event.nativeEvent?.data;
+    if (data === 'ended') {
+      if (!user) {
+        console.error('User not authenticated');
+        return;
+      }
+      
+      try {
+        // Generate random reward (0-5 coins)
+        const rewardCoins = Math.floor(Math.random() * 6);
+        
+        // Get fresh data from database first (like coin.tsx does)
+        const userDocRef = doc(db, 'users', user.uid);
+        const freshSnap = await getDoc(userDocRef);
+        const freshData = freshSnap.data();
+        const currentCoins = freshData?.coins || 0;
+        
+        // Update database with both coins and milestone tracking
+        await updateDoc(userDocRef, {
+          coins: increment(rewardCoins),
+          lastAdMilestoneClaimed: currentMilestone,
+        });
+
+        // Update local state with the correct calculated value
+        if (typeof setCoins === 'function') {
+          setCoins(currentCoins + rewardCoins);
+        }
+
+        // Hide ad section and show reward
+        setShowMilestoneAd(false);
+        setMilestoneAdModalVisible(false);
+
+        // Show reward alert
+        Alert.alert(
+          'Milestone Reward!',
+          `Congratulations! You earned ${rewardCoins} coin${rewardCoins !== 1 ? 's' : ''} for reaching ${currentMilestone.toLocaleString()} lifetime steps!`,
+          [{ text: 'Awesome!', style: 'default' }]
+        );
+
+        console.log(`[MILESTONE REWARD] User claimed ${rewardCoins} coins for milestone ${currentMilestone}`);
+      } catch (err) {
+        console.error('Failed to process milestone ad reward:', err);
+        Alert.alert('Error', 'Failed to claim your reward. Please try again.');
+      } finally {
+        setIsWatchingMilestoneAd(false);
+      }
     }
   };
 
@@ -290,7 +445,6 @@ export default function ProfileScreen() {
                   onSlidingComplete={handleSliderComplete}
                   minimumTrackTintColor="#8BC34A"
                   maximumTrackTintColor="rgba(255,255,255,0.3)"
-                  thumbStyle={styles.sliderThumb}
                 />
                 
                 <Text style={styles.sliderCurrentValue}>
@@ -328,6 +482,44 @@ export default function ProfileScreen() {
             </View>
           </LinearGradient>
         </View>
+
+        {/* Milestone Ad Section */}
+        {showMilestoneAd && (
+          <View style={styles.milestoneAdSection}>
+            <LinearGradient
+              colors={['rgba(255,215,0,0.1)', 'rgba(255,193,7,0.05)']}
+              style={styles.milestoneAdGradient}
+            >
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionIconContainer}>
+                  <Ionicons name="trophy" size={24} color="#FFD700" />
+                </View>
+                <Text style={styles.sectionTitle}>Milestone Reward</Text>
+              </View>
+
+              <View style={styles.milestoneAdContent}>
+                <Text style={styles.milestoneAdTitle}>
+                  🎉 {currentMilestone.toLocaleString()} Steps Milestone!
+                </Text>
+                <Text style={styles.milestoneAdSubtitle}>
+                  You've reached {currentMilestone.toLocaleString()} lifetime steps! Watch an ad to claim your reward (0-5 coins).
+                </Text>
+                
+                <Pressable onPress={handleWatchMilestoneAd} disabled={isWatchingMilestoneAd}>
+                  <LinearGradient
+                    colors={isWatchingMilestoneAd ? ['#FFD700', '#FFC107'] : ['#FFD700', '#FFC107']}
+                    style={styles.milestoneAdButton}
+                  >
+                    <Ionicons name="play-circle" size={20} color="#000" />
+                    <Text style={styles.milestoneAdButtonText}>
+                      {isWatchingMilestoneAd ? 'Watching...' : 'Claim Reward'}
+                    </Text>
+                  </LinearGradient>
+                </Pressable>
+              </View>
+            </LinearGradient>
+          </View>
+        )}
 
         {/* Daily History Section */}
         <View style={styles.historySection}>
@@ -492,6 +684,39 @@ export default function ProfileScreen() {
           lifetimeSteps={lifetimeSteps}
         />
       )}
+
+      {/* Milestone Ad Modal */}
+      <Modal
+        visible={milestoneAdModalVisible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => {
+          if (!isWatchingMilestoneAd) setMilestoneAdModalVisible(false);
+        }}
+      >
+        <View style={styles.modalContainer}>
+          {milestoneAdLoading && (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color="#fff" />
+              <Text style={{ color: '#fff', marginTop: 8 }}>Loading milestone ad...</Text>
+            </View>
+          )}
+          {/* @ts-ignore */}
+          <WebView
+            originWhitelist={["*"]}
+            source={{ html: milestoneAdHTML }}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            onMessage={onMilestoneAdMessage}
+            onLoadEnd={() => setMilestoneAdLoading(false)}
+            style={styles.webview}
+            allowsInlineMediaPlayback={true}
+            mediaPlaybackRequiresUserAction={false}
+            startInLoadingState={true}
+            allowsFullscreenVideo={true}
+          />
+        </View>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -876,5 +1101,66 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginLeft: 10,
+  },
+  // Milestone Ad Section Styles
+  milestoneAdSection: {
+    marginHorizontal: 20,
+    marginBottom: 30,
+    borderRadius: 20,
+  },
+  milestoneAdGradient: {
+    padding: 25,
+    borderRadius: 20,
+  },
+  milestoneAdContent: {
+    alignItems: 'center',
+  },
+  milestoneAdTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFD700',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  milestoneAdSubtitle: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  milestoneAdButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  milestoneAdButtonText: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  webview: {
+    flex: 1,
   },
 });

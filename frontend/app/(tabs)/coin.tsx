@@ -15,7 +15,7 @@ import { calculateTotalEarnings, calculateStepEarnings, calculateBonusEarnings }
 import { useLevelSystem } from '../../context/LevelContext';
 // @ts-ignore - firebaseConfig is a JS module without types
 import { auth, db } from '../../firebaseConfig';
-import { doc, updateDoc, increment } from 'firebase/firestore';
+import { doc, updateDoc, increment, getDoc } from 'firebase/firestore';
 // WebView for in-app ad playback
 // Note: install with `expo install react-native-webview` if missing
 // @ts-ignore
@@ -93,8 +93,69 @@ export default function CoinScreen() {
   const [selectedAmount, setSelectedAmount] = useState(100);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // New state for daily ad reward system
+  const [adsWatchedToday, setAdsWatchedToday] = useState(0);
+  const [dailyRewardClaimed, setDailyRewardClaimed] = useState(false);
+  
   // Available withdrawal amounts
   const withdrawalAmounts = [100, 500, 1000, 2000, 4000, 5000, 10000];
+  
+  // Load daily ad counter data on component mount
+  useEffect(() => {
+    const loadDailyAdData = async () => {
+      try {
+        // @ts-ignore
+        const currentAuth: any = auth;
+        const user = currentAuth.currentUser;
+        if (user) {
+          const userDocRef = doc(db, 'users', user.uid);
+          const userSnap = await getDoc(userDocRef);
+          const userData = userSnap.data();
+          
+          if (userData) {
+            // Check if we need to reset for new day
+            await checkAndResetDailyCounters(userDocRef, userData);
+            
+            // Get updated data after potential reset
+            const updatedSnap = await getDoc(userDocRef);
+            const updatedData = updatedSnap.data();
+            
+            setAdsWatchedToday(updatedData?.adsWatchedToday || 0);
+            setDailyRewardClaimed(updatedData?.dailyRewardClaimed || false);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading daily ad data:', error);
+      }
+    };
+
+    loadDailyAdData();
+  }, []);
+
+  // Utility function to get current date in YYYY-MM-DD format
+  const getCurrentDateString = () => {
+    return new Date().toISOString().split('T')[0];
+  };
+
+  // Function to check and reset daily counters if needed
+  const checkAndResetDailyCounters = async (userDocRef: any, userData: any) => {
+    const currentDate = getCurrentDateString();
+    const lastAdWatchDate = userData?.lastAdWatchDate;
+
+    // If it's a new day, reset the counters
+    if (lastAdWatchDate !== currentDate) {
+      console.log('[DAILY RESET] New day detected, resetting daily counters');
+      await updateDoc(userDocRef, {
+        adsWatchedToday: 0,
+        dailyRewardClaimed: false,
+        lastAdWatchDate: currentDate,
+      });
+      setAdsWatchedToday(0);
+      setDailyRewardClaimed(false);
+      return true; // Reset occurred
+    }
+    return false; // No reset needed
+  };
   
   // Calculate earnings with level system
   const totalEarned = calculateTotalEarnings(lifetimeSteps, coins, boostSteps, currentLevel);
@@ -125,29 +186,58 @@ export default function CoinScreen() {
   const onAdMessage = async (event: any) => {
     const data = event.nativeEvent?.data;
     if (data === 'ended') {
-      // Persist reward to Firestore first
       try {
         // @ts-ignore
         const currentAuth: any = auth;
         const user = currentAuth.currentUser;
         if (user) {
           const userDocRef = doc(db, 'users', user.uid);
-          await updateDoc(userDocRef, {
-            coins: increment(2),
-            adsWatched: increment(1),
-          });
-
-          // Update local UI after successful persistence
-          try {
-            if (typeof setCoins === 'function') {
-              setCoins((prev: number) => (Number(prev) || 0) + 2);
-            }
-          } catch (e) {
-            console.error('Error updating local coins after ad persistence:', e);
+          
+          // Get current user data to check daily counters
+          const userSnap = await getDoc(userDocRef);
+          const userData = userSnap.data();
+          
+          // Check and reset daily counters if it's a new day
+          await checkAndResetDailyCounters(userDocRef, userData);
+          
+          // Get updated data after potential reset
+          const updatedSnap = await getDoc(userDocRef);
+          const updatedData = updatedSnap.data();
+          
+          const currentAdsWatchedToday = updatedData?.adsWatchedToday || 0;
+          const currentDailyRewardClaimed = updatedData?.dailyRewardClaimed || false;
+          
+          // Prepare the update object
+          const updates: any = {
+            adsWatchedToday: increment(1),
+            lastAdWatchDate: getCurrentDateString(),
+          };
+          
+          // Check if user should get the daily reward (15+ ads and not claimed yet)
+          const newAdsWatchedToday = currentAdsWatchedToday + 1;
+          if (newAdsWatchedToday >= 15 && !currentDailyRewardClaimed) {
+            updates.coins = increment(1);
+            updates.dailyRewardClaimed = true;
+            console.log('[DAILY REWARD] User reached 15 ads, awarding +1 coin');
           }
+          
+          // Update the database
+          await updateDoc(userDocRef, updates);
+          
+          // Update local state
+          setAdsWatchedToday(newAdsWatchedToday);
+          if (newAdsWatchedToday >= 15 && !currentDailyRewardClaimed) {
+            setDailyRewardClaimed(true);
+            // Update coins in local state
+            if (typeof setCoins === 'function') {
+              setCoins((prev: number) => (Number(prev) || 0) + 1);
+            }
+          }
+          
+          console.log(`[AD WATCH] Ad completed. Today: ${newAdsWatchedToday}/15 ads`);
         }
       } catch (err) {
-        console.error('Failed to persist ad reward to Firestore:', err);
+        console.error('Failed to process ad watch:', err);
       } finally {
         setIsWatching(false);
         setShowAdModal(false);
@@ -265,14 +355,18 @@ export default function CoinScreen() {
 
       {/* Watch Ad Section */}
       <View style={styles.adBox}>
-        <Text style={styles.adTitle}>Watch ad to earn coins</Text>
-        <Text style={styles.adSubtitle}>Watch a short ad to earn coins</Text>
+        <Text style={styles.adTitle}>Daily Ad Challenge</Text>
+        <Text style={styles.adSubtitle}>
+          Watch 15 ads today to earn 1 coin • {adsWatchedToday}/15 completed
+        </Text>
         <Pressable onPress={handleWatchAd} disabled={isWatching}>
           <LinearGradient
             colors={isWatching ? ['#94D3A2', '#7CC47F'] : ['#8BC34A', '#4CAF50']}
             style={styles.watchButton}
           >
-            <Text style={styles.watchButtonText}>{isWatching ? 'Watching...' : 'Watch Ad'}</Text>
+            <Text style={styles.watchButtonText}>
+              {isWatching ? 'Watching...' : dailyRewardClaimed ? 'Keep Watching' : 'Watch Ad'}
+            </Text>
           </LinearGradient>
         </Pressable>
       </View>

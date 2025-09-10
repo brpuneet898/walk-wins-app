@@ -197,7 +197,7 @@ export default function HomeScreen() {
 
   // Track previous weeklyData to detect when it disappears (with intelligent recovery)
   const prevWeeklyDataRef = useRef(weeklyData);
-  const recoveryTimeoutRef = useRef<number | null>(null);
+  const recoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRecoveryTimeRef = useRef(0);
   const initialLoadCompleteRef = useRef(false);
 
@@ -233,10 +233,18 @@ export default function HomeScreen() {
       }
 
       // Debounce recovery by 1 second to avoid rapid triggers
-      recoveryTimeoutRef.current = setTimeout(() => {
+      recoveryTimeoutRef.current = setTimeout(async () => {
         console.log('[WEEKLY MONITOR] Executing recovery after debounce...');
         lastRecoveryTimeRef.current = Date.now();
-        fetchWeeklyData();
+
+        // Try to recover data first
+        const recoverySuccess = await recoverWeeklyData();
+
+        // If recovery didn't work, try fetching fresh data
+        if (!recoverySuccess) {
+          console.log('[WEEKLY MONITOR] Recovery failed, trying fresh fetch...');
+          await fetchWeeklyData();
+        }
       }, 1000);
     } else if (recoveryTimeoutRef.current && currentLength > 0) {
       // If data reappeared naturally, cancel pending recovery
@@ -446,11 +454,12 @@ export default function HomeScreen() {
         let steps = cachedWeekData[i]?.steps || 0; // Start with cached value
 
         if (isToday) {
-          // For today, use the live todaysSteps value
+          // For today, ALWAYS use the live todaysSteps value - never override with stored data
+          // This prevents the reset issue when fetchWeeklyData is called during active walking
           steps = todaysSteps;
-          console.log(`[WEEKLY DATA] ${dateString} (${dayLabel}): IS TODAY - Using live todaysSteps=${steps}`);
+          console.log(`[WEEKLY DATA] ${dateString} (${dayLabel}): IS TODAY - Using live todaysSteps=${steps} (never overridden by stored data)`);
         } else {
-          // For other days, check both Firestore and AsyncStorage
+          // For past days, check both Firestore and AsyncStorage
           try {
             console.log(`[WEEKLY DATA] Fetching data for ${dateString} (${dayLabel})...`);
 
@@ -476,13 +485,24 @@ export default function HomeScreen() {
               // If Firestore fails, we'll use local data
             }
 
-            // Use the higher value (most recent data)
-            steps = Math.max(firestoreSteps, localSteps);
+            // Use the higher value (most recent data) - but never use 0 if we have valid cached data
+            const higherValue = Math.max(firestoreSteps, localSteps);
+            if (higherValue > 0) {
+              steps = higherValue;
+            } else if (steps > 0) {
+              // Keep existing cached value if both sources return 0
+              console.log(`[WEEKLY DATA] Both sources returned 0 for ${dateString}, keeping cached value: ${steps}`);
+            } else {
+              steps = 0;
+            }
 
             console.log(`[WEEKLY DATA] ${dateString} (${dayLabel}): Firestore=${firestoreSteps}, Local=${localSteps}, Using=${steps}`);
           } catch (error: any) {
             console.log(`[WEEKLY DATA] Error fetching data for ${dateString}:`, error.message);
-            steps = 0;
+            // Don't reset to 0 if we have valid cached data
+            if (steps === 0) {
+              steps = 0;
+            }
           }
         }
 
@@ -586,18 +606,135 @@ export default function HomeScreen() {
     setShowBoostTooltip(true);
   };
 
+  // Backup save mechanism for critical data persistence
+  const backupTodaysSteps = async (steps: number) => {
+    if (steps > 0) {
+      const todayString = getLocalDateString();
+      const backupKey = `backup_dailySteps_${todayString}`;
+
+      try {
+        await AsyncStorage.setItem(backupKey, String(steps));
+        console.log(`[BACKUP] Saved backup of ${steps} steps for ${todayString}`);
+      } catch (error) {
+        console.error('[BACKUP] Failed to save backup:', error);
+      }
+    }
+  };
+
+  // Emergency recovery of today's steps
+  const recoverTodaysSteps = async (): Promise<number> => {
+    const todayString = getLocalDateString();
+    const primaryKey = `dailySteps_${todayString}`;
+    const backupKey = `backup_dailySteps_${todayString}`;
+
+    try {
+      // Try primary storage first
+      const primarySteps = await AsyncStorage.getItem(primaryKey);
+      if (primarySteps) {
+        const steps = parseInt(primarySteps, 10);
+        if (steps > 0) return steps;
+      }
+
+      // Try backup storage
+      const backupSteps = await AsyncStorage.getItem(backupKey);
+      if (backupSteps) {
+        const steps = parseInt(backupSteps, 10);
+        if (steps > 0) {
+          console.log(`[EMERGENCY RECOVERY] Recovered ${steps} steps from backup`);
+          // Restore to primary storage
+          await AsyncStorage.setItem(primaryKey, String(steps));
+          return steps;
+        }
+      }
+    } catch (error) {
+      console.error('[EMERGENCY RECOVERY] Failed to recover steps:', error);
+    }
+
+    return 0;
+  };
+
+  // Enhanced recovery mechanism for weekly data
+  const recoverWeeklyData = async () => {
+    console.log('[RECOVERY] Attempting to recover weekly data...');
+
+    try {
+      const today = new Date();
+      const todayString = getLocalDateString(today);
+      const recoveredData = [];
+
+      // Get Monday of current week
+      const monday = new Date(today);
+      const dayOfWeek = today.getDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      monday.setDate(today.getDate() + diff);
+
+      const dayLabels = ['M', 'T', 'W', 'Th', 'F', 'S', 'Su'];
+
+      // Try to recover data from AsyncStorage for each day
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(monday);
+        date.setDate(monday.getDate() + i);
+        const dateString = getLocalDateString(date);
+        const isToday = dateString === todayString;
+
+        let steps = 0;
+
+        try {
+          const storedSteps = await AsyncStorage.getItem(`dailySteps_${dateString}`);
+          if (storedSteps) {
+            steps = parseInt(storedSteps, 10);
+            console.log(`[RECOVERY] Recovered ${steps} steps for ${dateString}`);
+          }
+        } catch (error) {
+          console.log(`[RECOVERY] Failed to recover data for ${dateString}:`, error);
+        }
+
+        // For today, prioritize the current live todaysSteps value
+        if (isToday) {
+          // Always use todaysSteps for today, unless it's 0 and we have valid stored data
+          if (todaysSteps > 0 || steps === 0) {
+            steps = todaysSteps;
+          }
+        }
+
+        recoveredData.push({
+          dayLabel: dayLabels[i],
+          date: date.getDate().toString(),
+          steps,
+          goal: dailyStepGoal,
+          isToday
+        });
+      }
+
+      const hasRecoveredData = recoveredData.some(day => day.steps > 0);
+      if (hasRecoveredData) {
+        console.log('[RECOVERY] Successfully recovered data:', recoveredData.map(d => `${d.dayLabel}:${d.steps}`).join(', '));
+        setWeeklyData(recoveredData);
+        setIsWeeklyDataLoading(false);
+        return true;
+      } else {
+        console.log('[RECOVERY] No data to recover');
+        return false;
+      }
+    } catch (error) {
+      console.error('[RECOVERY] Recovery failed:', error);
+      return false;
+    }
+  };
+
   // Calculate lifetime steps from all daily steps in database
   const calculateLifetimeFromDailySteps = async (userId: string): Promise<number> => {
     try {
       const dailyStepsRef = collection(db, `users/${userId}/dailySteps`);
       const querySnapshot = await getDocs(dailyStepsRef);
-      
+
       let totalLifetimeSteps = 0;
       querySnapshot.forEach((doc) => {
         const dayData = doc.data();
-        totalLifetimeSteps += dayData.steps || 0;
+        // Include both regular steps and boost steps in lifetime total
+        totalLifetimeSteps += (dayData.steps || 0) + (dayData.boostSteps || 0);
       });
-      
+
       console.log(`[LIFETIME CALC] Calculated lifetime steps: ${totalLifetimeSteps} from ${querySnapshot.size} days`);
       return totalLifetimeSteps;
     } catch (error) {
@@ -809,7 +946,15 @@ export default function HomeScreen() {
 
       const todayString = getLocalDateString();
       const storedData = await AsyncStorage.getItem(`dailySteps_${todayString}`);
-      const initialTodaysSteps = storedData ? parseInt(storedData, 10) : 0;
+      let initialTodaysSteps = storedData ? parseInt(storedData, 10) : 0;
+
+      // If no steps in primary storage, try emergency recovery
+      if (initialTodaysSteps === 0) {
+        console.log('[INIT] No steps in primary storage, attempting emergency recovery...');
+        initialTodaysSteps = await recoverTodaysSteps();
+      }
+
+      console.log(`[INIT] Initial todaysSteps from storage: ${initialTodaysSteps}`);
       
       // Check Firestore for today's steps and use the higher value
       let finalTodaysSteps = initialTodaysSteps;
@@ -828,7 +973,7 @@ export default function HomeScreen() {
       } catch (error) {
         console.log('[STEP SYNC] Failed to load from Firestore, using local value');
       }
-      
+
       setTodaysSteps(finalTodaysSteps);
 
       // Fetch initial data
@@ -847,45 +992,59 @@ export default function HomeScreen() {
         }
       } catch (error) {
         // fallback to watchStepCount
-      }
-
-      subscription = Pedometer.watchStepCount(result => {
+      }      subscription = Pedometer.watchStepCount(result => {
         const currentListenerSteps = result.steps;
         if (!isInitialized.current) {
           lastStepValueFromListener.current = currentListenerSteps;
           isInitialized.current = true;
+          console.log(`[PEDOMETER] Initialized with ${currentListenerSteps} steps`);
           return;
         }
         let incrementStep = currentListenerSteps - lastStepValueFromListener.current;
         lastStepValueFromListener.current = currentListenerSteps;
-        if (incrementStep < 0) incrementStep = 0;
-          if (incrementStep > 0) {
-            console.log(`[STEP DEBUG] Adding ${incrementStep} steps. Boost active: ${isBoostActiveRef.current}`);
-            setTodaysSteps(prevSteps => prevSteps + incrementStep);
-            try {
-              // If we're in a boost window, accumulate boosted steps locally and persist to device storage
-              if (isBoostActiveRef.current) {
-                console.log(`[BOOST DEBUG] Adding ${incrementStep} boost steps! Total boost: ${boostStepsRef.current + incrementStep}`);
-                boostStepsRef.current += incrementStep;
-                const todayStringLocal = getLocalDateString();
-                AsyncStorage.setItem(`dailyBoostSteps_${todayStringLocal}`, String(boostStepsRef.current));
-                // update app-wide boostSteps immediately so UI earnings reflect boosted rate right away
-                setBoostSteps((prev: number) => (Number(prev) || 0) + incrementStep);
-                console.log(`[BOOST DEBUG] Updated context boostSteps. Previous context value: ${boostSteps}`);
-                
-                // Force immediate sync for boost steps (bypasses 5-minute cycle)
-                if (!isLoggingOut) {
-                  console.log(`[BOOST DEBUG] Force immediate sync for boost steps...`);
-                  syncToFirebase();
-                }
-              } else {
-                console.log(`[BOOST DEBUG] No boost - normal step tracking only`);
+
+        // Validate increment to prevent negative or unreasonably large values
+        if (incrementStep < 0) {
+          console.log(`[PEDOMETER] Negative increment detected (${incrementStep}), resetting to 0`);
+          incrementStep = 0;
+        } else if (incrementStep > 1000) {
+          console.log(`[PEDOMETER] Large increment detected (${incrementStep}), capping at 100`);
+          incrementStep = 100; // Cap at reasonable maximum
+        }
+
+        if (incrementStep > 0) {
+          console.log(`[STEP DEBUG] Adding ${incrementStep} steps. Boost active: ${isBoostActiveRef.current}`);
+          setTodaysSteps(prevSteps => {
+            const newSteps = prevSteps + incrementStep;
+            console.log(`[STEP DEBUG] Steps updated: ${prevSteps} → ${newSteps}`);
+            return newSteps;
+          });
+
+          try {
+            // If we're in a boost window, accumulate boosted steps locally and persist to device storage
+            if (isBoostActiveRef.current) {
+              console.log(`[BOOST DEBUG] Adding ${incrementStep} boost steps! Total boost: ${boostStepsRef.current + incrementStep}`);
+              boostStepsRef.current += incrementStep;
+              const todayStringLocal = getLocalDateString();
+              AsyncStorage.setItem(`dailyBoostSteps_${todayStringLocal}`, String(boostStepsRef.current)).catch(error => {
+                console.error('[BOOST DEBUG] Failed to save boost steps:', error);
+              });
+              // update app-wide boostSteps immediately so UI earnings reflect boosted rate right away
+              setBoostSteps((prev: number) => (Number(prev) || 0) + incrementStep);
+              console.log(`[BOOST DEBUG] Updated context boostSteps. Previous context value: ${boostSteps}`);
+
+              // Force immediate sync for boost steps (bypasses 5-minute cycle)
+              if (!isLoggingOut) {
+                console.log(`[BOOST DEBUG] Force immediate sync for boost steps...`);
+                syncToFirebase();
               }
-            } catch (e) {
-              // silent fail for AsyncStorage
-              console.error('[BOOST DEBUG] Error saving boost steps:', e);
+            } else {
+              console.log(`[BOOST DEBUG] No boost - normal step tracking only`);
             }
+          } catch (e) {
+            console.error('[BOOST DEBUG] Error in boost handling:', e);
           }
+        }
       });
       hourlySyncInterval = setInterval(syncToFirebase, 300000); // 5-minute sync cycles
     };
@@ -899,10 +1058,15 @@ export default function HomeScreen() {
           syncToFirebase();
         }
 
-        // Also refresh weekly data when app becomes active
-        if (user && weeklyData.length === 0) {
-          console.log('[APP STATE] App active, ensuring weekly data is loaded');
-          fetchWeeklyData();
+        // Enhanced weekly data recovery when app becomes active
+        if (user && (weeklyData.length === 0 || weeklyData.every(day => day.steps === 0))) {
+          console.log('[APP STATE] App active, ensuring weekly data is loaded and valid');
+          // First try recovery, then fetch if needed
+          recoverWeeklyData().then((recovered) => {
+            if (!recovered) {
+              fetchWeeklyData();
+            }
+          });
         }
       }
     });
@@ -954,32 +1118,39 @@ export default function HomeScreen() {
     console.log('[WEEKLY UPDATE] todaysSteps changed to:', todaysSteps);
     console.log('[WEEKLY UPDATE] Current weeklyData length:', weeklyData.length);
 
-    if (weeklyData.length > 0) {
-      // Check if today's steps actually changed
+    // Only update if we have valid weekly data and todaysSteps is reasonable
+    if (weeklyData.length > 0 && todaysSteps >= 0) {
+      // Check if today's steps actually changed significantly
       const todayEntry = weeklyData.find(day => day.isToday);
-      if (todayEntry && todayEntry.steps !== todaysSteps) {
-        // Update existing weekly data
+      const currentTodaySteps = todayEntry?.steps || 0;
+
+      // Always update weekly data when todaysSteps changes (removed 10-step threshold)
+      const shouldUpdate = true;
+
+      if (shouldUpdate) {
         console.log('[WEEKLY UPDATE] Updating today\'s steps in existing weeklyData...');
+        console.log(`[WEEKLY UPDATE] Found today (${todayEntry?.dayLabel}), updating steps from ${currentTodaySteps} to ${todaysSteps}`);
+
         const updatedData = weeklyData.map(day => {
           if (day.isToday) {
-            console.log(`[WEEKLY UPDATE] Found today (${day.dayLabel}), updating steps from ${day.steps} to ${todaysSteps}`);
             return { ...day, steps: todaysSteps };
           }
           return day;
         });
+
         console.log('[WEEKLY UPDATE] New weekly data:', updatedData.map(d => `${d.dayLabel}:${d.steps}`).join(', '));
         setWeeklyData(updatedData);
       } else {
-        console.log('[WEEKLY UPDATE] Today\'s steps haven\'t changed, skipping update');
+        console.log('[WEEKLY UPDATE] Today\'s steps haven\'t changed significantly, skipping update');
       }
-    } else if (todaysSteps > 0 && !isWeeklyDataLoading) {
+    } else if (todaysSteps > 0 && !isWeeklyDataLoading && !isLoadingLeaderboard) {
       // If weeklyData is empty but we have steps and not loading, try to fetch weekly data
       console.log('[WEEKLY UPDATE] weeklyData is empty but todaysSteps > 0, fetching weekly data...');
       fetchWeeklyData();
     } else {
       console.log('[WEEKLY UPDATE] weeklyData is empty and no steps yet, or still loading, skipping update');
     }
-  }, [todaysSteps, weeklyData.length, isWeeklyDataLoading]);
+  }, [todaysSteps, weeklyData.length, isWeeklyDataLoading, isLoadingLeaderboard]);
 
   // Force refresh weekly data when app starts or user changes
   useEffect(() => {
@@ -1012,12 +1183,30 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const saveToDevice = async () => {
-      const todayString = getLocalDateString();
-      await AsyncStorage.setItem(`dailySteps_${todayString}`, String(todaysSteps));
+      if (isInitialized.current && todaysSteps > 0) {
+        const todayString = getLocalDateString();
+        try {
+          await AsyncStorage.setItem(`dailySteps_${todayString}`, String(todaysSteps));
+          console.log(`[ASYNC STORAGE] Successfully saved ${todaysSteps} steps for ${todayString}`);
+
+          // Also create a backup
+          await backupTodaysSteps(todaysSteps);
+        } catch (error) {
+          console.error('[ASYNC STORAGE] Failed to save todaysSteps:', error);
+          // Try to save again after a short delay
+          setTimeout(async () => {
+            try {
+              await AsyncStorage.setItem(`dailySteps_${todayString}`, String(todaysSteps));
+              console.log(`[ASYNC STORAGE] Retry save successful for ${todayString}`);
+              await backupTodaysSteps(todaysSteps);
+            } catch (retryError) {
+              console.error('[ASYNC STORAGE] Retry save failed:', retryError);
+            }
+          }, 1000);
+        }
+      }
     };
-    if (isInitialized.current) {
-      saveToDevice();
-    }
+    saveToDevice();
   }, [todaysSteps]);
 
   // Update available moods based on time
