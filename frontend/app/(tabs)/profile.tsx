@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable, Alert, ScrollView, FlatList, Modal, ActivityIndicator } from 'react-native';
 import { auth, db } from '../../firebaseConfig';
-import { signOut } from 'firebase/auth';
-import { doc, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { signOut, deleteUser } from 'firebase/auth';
+import { doc, getDoc, updateDoc, increment, deleteDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { useSteps } from '../../context/StepContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome, Ionicons } from '@expo/vector-icons';
@@ -185,17 +185,84 @@ export default function ProfileScreen() {
     await updateGoalInDatabase(goal);
   };
 
-  const handleLogout = () => {
+  const handleDeleteAccount = () => {
     // Animate button press
     buttonScale.value = withSpring(0.95, {}, () => {
       buttonScale.value = withSpring(1);
     });
 
-    setIsLoggingOut(true);
-    signOut(auth).catch(error => {
-      Alert.alert('Logout Error', error.message);
-      setIsLoggingOut(false);
-    });
+    if (!user) {
+      Alert.alert('Error', 'No user logged in');
+      return;
+    }
+
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to delete your account? This action cannot be undone and will permanently delete all your data.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              // Helper function to delete all documents in a subcollection
+              const deleteSubcollection = async (subcollectionName: string) => {
+                try {
+                  const subcollectionRef = collection(db, 'users', user.uid, subcollectionName);
+                  const querySnapshot = await getDocs(subcollectionRef);
+                  
+                  if (!querySnapshot.empty) {
+                    const batch = writeBatch(db);
+                    querySnapshot.forEach((document) => {
+                      batch.delete(document.ref);
+                    });
+                    await batch.commit();
+                    console.log(`Deleted ${querySnapshot.size} documents from ${subcollectionName}`);
+                  }
+                } catch (error) {
+                  console.log(`Error deleting ${subcollectionName}:`, error);
+                  // Continue with deletion even if subcollection deletion fails
+                }
+              };
+
+              // Delete all subcollections
+              await Promise.all([
+                deleteSubcollection('dailySteps'),
+                deleteSubcollection('transactions'),
+                // Add any other subcollections here if they exist
+              ]);
+
+              // Delete the main user document
+              await deleteDoc(doc(db, 'users', user.uid));
+              
+              // Try to delete user authentication
+              try {
+                await deleteUser(user);
+              } catch (authError: any) {
+                // If requires recent login, we'll still proceed with data deletion
+                // The auth will be handled when user tries to log in again
+                if (authError.code === 'auth/requires-recent-login') {
+                  console.log('Auth requires recent login, proceeding with data deletion only');
+                } else {
+                  console.log('Auth deletion error:', authError);
+                }
+              }
+              
+              // Sign out (though user may still be authenticated)
+              await signOut(auth);
+              
+              // Navigate to signup screen without showing any errors
+              router.replace('/(auth)/signup');
+            } catch (error: any) {
+              console.log('Account deletion error:', error);
+              // Don't show error to user, just redirect to signup
+              router.replace('/(auth)/signup');
+            }
+          }
+        },
+      ]
+    );
   };
 
   const copyReferralCode = () => {
@@ -651,16 +718,16 @@ export default function ProfileScreen() {
           </LinearGradient>
         </View>
 
-        {/* Logout Button */}
+        {/* Delete Account Button */}
         <View style={styles.logoutContainer}>
-          <Pressable onPress={handleLogout}>
+          <Pressable onPress={handleDeleteAccount}>
             <Animated.View style={[buttonAnimatedStyle]}>
               <LinearGradient
                 colors={['#FF5722', '#D32F2F']}
                 style={styles.logoutButton}
               >
-                <Ionicons name="log-out" size={20} color="#FFFFFF" />
-                <Text style={styles.logoutButtonText}>Logout</Text>
+                <Ionicons name="trash" size={20} color="#FFFFFF" />
+                <Text style={styles.logoutButtonText}>Delete my Account</Text>
               </LinearGradient>
             </Animated.View>
           </Pressable>

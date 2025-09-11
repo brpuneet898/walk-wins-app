@@ -175,11 +175,17 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
             const dbLifetimeSteps = Number(data.lifetimeTotalSteps || data.lifetimeSteps) || 0;
             setLifetimeSteps(dbLifetimeSteps);
           } else {
+            // User document doesn't exist (possibly deleted), reset to defaults
             setBoostSteps(0);
             setLifetimeSteps(0);
+            setCoins(0);
           }
         }, (err) => {
-          console.error('Error listening to user doc:', err);
+          // Handle errors silently (e.g., when user document is deleted)
+          console.log('User document listener error (possibly deleted):', err.message);
+          setBoostSteps(0);
+          setLifetimeSteps(0);
+          setCoins(0);
         });
       } else {
         setBoostSteps(0);
@@ -216,7 +222,9 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
           records.sort((a, b) => b.id.localeCompare(a.id));
           setDailyRecords(records);
         }, (err: any) => {
-          console.error('Error listening to daily records:', err);
+          // Handle errors silently (e.g., when subcollection doesn't exist or user is deleted)
+          console.log('Daily records listener error (possibly deleted):', err.message);
+          setDailyRecords([]);
         });
       } else {
         setDailyRecords([]);
