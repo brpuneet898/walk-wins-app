@@ -4,7 +4,6 @@ import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSteps } from '../../context/StepContext';
-import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,11 +13,13 @@ export default function MapScreen() {
   const [isTracking, setIsTracking] = useState(false);
   const [todaysSteps, setTodaysSteps] = useState(0);
   const [viewReady, setViewReady] = useState(false);
+  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false);
   const webRef = useRef<WebView | null>(null);
   const mapContainerRef = useRef<View | null>(null);
   const queueRef = useRef<string[]>([]);
   const subscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const centeredRef = useRef(false);
+  const screenshotPromiseRef = useRef<((value: string) => void) | null>(null);
   const { lifetimeSteps } = useSteps();
 
   // Add effect to ensure view is ready
@@ -61,50 +62,148 @@ export default function MapScreen() {
   const takeScreenshotAndShare = async () => {
     console.log('Screenshot button pressed!');
     
+    // Prevent multiple simultaneous captures
+    if (isCapturingScreenshot) {
+      Alert.alert('Please Wait', 'A screenshot is already being captured. Please wait.');
+      return;
+    }
+    
     try {
-      // Create a simple data card instead of trying to capture WebView
-      const message = `🚶‍♂️ Check out my walking achievement! 
+      setIsCapturingScreenshot(true);
+
+      // Check if WebView is ready
+      if (!ready) {
+        Alert.alert('Map Not Ready', 'Please wait for the map to fully load before taking a screenshot.');
+        return;
+      }
+
+      // Request media library permissions if not already granted
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Media library access is required to save screenshots.');
+        return;
+      }
+
+      // Show loading indicator
+      Alert.alert('Capturing Screenshot', 'Please wait while we capture your walking trail...', [{ text: 'OK' }]);
+
+      // Small delay to ensure WebView is ready
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Try capture with different quality settings if first attempt fails
+      let base64Data;
+      try {
+        base64Data = await new Promise<string>((resolve, reject) => {
+          screenshotPromiseRef.current = resolve;
+          webRef.current?.injectJavaScript('captureMapScreenshot();');
+          // Reduced timeout for first attempt
+          setTimeout(() => reject(new Error('timeout')), 15000);
+        });
+      } catch (firstAttemptError) {
+        console.log('First capture attempt failed, trying with reduced quality...');
+        
+        // Try again with reduced quality settings
+        try {
+          base64Data = await new Promise<string>((resolve, reject) => {
+            screenshotPromiseRef.current = resolve;
+            webRef.current?.injectJavaScript('captureMapScreenshotLowQuality();');
+            setTimeout(() => reject(new Error('timeout')), 20000);
+          });
+        } catch (secondAttemptError) {
+          throw new Error('Screenshot timeout - the map may be too large or slow to capture. Try again.');
+        }
+      }
+
+      // Save base64 to temporary file
+      const fileName = `walk-trail-${Date.now()}.png`;
+      const tempUri = `${FileSystem.cacheDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(tempUri, base64Data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Move to permanent location
+      const permanentUri = `${FileSystem.documentDirectory}${fileName}`;
+      await FileSystem.moveAsync({
+        from: tempUri,
+        to: permanentUri,
+      });
+
+      // Save to device's media library (gallery)
+      const asset = await MediaLibrary.createAssetAsync(permanentUri);
+      await MediaLibrary.createAlbumAsync('WalkWins Screenshots', asset, false);
+
+      // Share the saved image
+      const result = await Share.share({
+        message: `🚶‍♂️ Check out my walking trail! 
 
 📊 Today's Steps: ${todaysSteps.toLocaleString()}
 🏆 Lifetime Total: ${lifetimeSteps.toLocaleString()} steps
 💰 Total Earned: ₹${(lifetimeSteps * 0.01).toFixed(2)}
-${isTracking ? '� Currently tracking my route!' : '⭕ Not tracking at the moment'}
+${isTracking ? '🟢 Currently tracking my route!' : '⭕ Not tracking at the moment'}
 
 Can you beat me? 💪
 
-Track your steps with WalkWins! 📱`;
-
-      // Share the data directly
-      const result = await Share.share({
-        message: message,
-        title: 'My Walking Stats',
+Track your steps with WalkWins! 📱`,
+        url: permanentUri, // Share the image URI
+        title: 'My Walking Trail Screenshot',
       }, {
         dialogTitle: 'Share Your Walking Achievement',
         subject: 'Check out my walking progress!',
       });
 
       if (result.action === Share.sharedAction) {
-        console.log('Successfully shared walking stats!');
+        console.log('Successfully shared screenshot!');
         Alert.alert(
           'Shared Successfully! 🎉', 
-          'Your walking achievement has been shared! Screenshot feature coming in future updates.',
+          'Your walking trail screenshot has been saved to gallery and shared!',
           [{ text: 'Awesome!' }]
         );
       } else if (result.action === Share.dismissedAction) {
         console.log('Share dismissed');
+        Alert.alert('Saved to Gallery', 'Screenshot saved, but sharing was cancelled.');
       }
         
-    } catch (error) {
-      console.error('Error sharing:', error);
-      Alert.alert('Error', 'Failed to share. Please try again.');
+    } catch (error: any) {
+      console.error('Error taking/saving/sharing screenshot:', error);
+      let errorMessage = 'Failed to capture or share screenshot. Please try again.';
+      
+      if (error.message?.includes('timeout')) {
+        errorMessage = 'Screenshot capture timed out. The map may be too large or the network is slow. Please try again with a simpler view.';
+      } else if (error.message?.includes('html2canvas')) {
+        errorMessage = 'Screenshot capture failed. Please ensure the map is fully loaded and try again.';
+      }
+      
+      Alert.alert('Screenshot Error', errorMessage);
+    } finally {
+      setIsCapturingScreenshot(false);
+      screenshotPromiseRef.current = null;
     }
   };
 
   useEffect(() => {
     (async () => {
+      // Check if location services are enabled
+      const locationEnabled = await Location.hasServicesEnabledAsync();
+      if (!locationEnabled) {
+        Alert.alert(
+          'Location Services Disabled',
+          'Please enable location services in your device settings to use the map features.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Request foreground permissions
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        console.error('Permission to access location was denied');
+        Alert.alert(
+          'Location Permission Required',
+          'Location permission is required to show your position on the map and track your walks.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Location.requestForegroundPermissionsAsync() }
+          ]
+        );
         return;
       }
 
@@ -137,7 +236,39 @@ Track your steps with WalkWins! 📱`;
     try {
       let coords = { lat, lng };
       if (lat == null || lng == null) {
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        // Check location services and permissions before getting position
+        const locationEnabled = await Location.hasServicesEnabledAsync();
+        if (!locationEnabled) {
+          Alert.alert(
+            'Location Services Disabled',
+            'Please enable location services in your device settings.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Location Permission Required',
+            'Location permission is required to center the map on your current location.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Grant Permission', onPress: async () => {
+                const result = await Location.requestForegroundPermissionsAsync();
+                if (result.status === 'granted') {
+                  // Retry after permission granted
+                  sendLocate();
+                }
+              }}
+            ]
+          );
+          return;
+        }
+
+        const pos = await Location.getCurrentPositionAsync({ 
+          accuracy: Location.Accuracy.High
+        });
         coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       }
       const msg = JSON.stringify({ type: 'locate', coords });
@@ -146,8 +277,19 @@ Track your steps with WalkWins! 📱`;
       } else {
         queueRef.current.push(msg);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('sendLocate error', err);
+      let errorMessage = 'Unable to get your current location.';
+      
+      if (err.message?.includes('Not authorized')) {
+        errorMessage = 'Location permission is required. Please grant permission in settings.';
+      } else if (err.message?.includes('timeout')) {
+        errorMessage = 'Location request timed out. Please try again.';
+      } else if (err.message?.includes('services disabled')) {
+        errorMessage = 'Location services are disabled. Please enable them in settings.';
+      }
+      
+      Alert.alert('Location Error', errorMessage, [{ text: 'OK' }]);
     }
   };
 
@@ -178,6 +320,7 @@ Track your steps with WalkWins! 📱`;
   <head>
     <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0"/>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <style> html,body,#map { height:100%; margin:0; padding:0 } </style>
   </head>
   <body>
@@ -212,6 +355,149 @@ Track your steps with WalkWins! 📱`;
           }).addTo(map);
         } else {
           marker.setLatLng(latlng);
+        }
+      }
+
+      function captureMapScreenshot() {
+        // Reset state before capturing
+        resetScreenshotState();
+        
+        // Check if html2canvas is loaded
+        if (typeof html2canvas === 'undefined') {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'screenshotError',
+            error: 'Screenshot library not loaded'
+          }));
+          return;
+        }
+
+        // Small delay to ensure map is fully rendered
+        setTimeout(() => {
+          html2canvas(document.getElementById('map'), {
+            useCORS: true,
+            allowTaint: false,
+            scale: 1,
+            width: window.innerWidth,
+            height: window.innerHeight,
+            backgroundColor: '#ffffff',
+            logging: false,
+            foreignObjectRendering: true, // Enable SVG rendering
+            removeContainer: false, // Keep container structure
+            ignoreElements: function(element) {
+              // Skip scripts and styles that might interfere
+              return element.tagName === 'SCRIPT' || element.tagName === 'STYLE' || 
+                     element.tagName === 'LINK' || element.id === 'html2canvas-proxy';
+            },
+            onclone: function(clonedDoc) {
+              // Ensure map container is properly sized
+              const clonedMap = clonedDoc.getElementById('map');
+              if (clonedMap) {
+                clonedMap.style.width = '100%';
+                clonedMap.style.height = '100%';
+                // Force redraw of SVG elements
+                const svgElements = clonedMap.querySelectorAll('svg, canvas');
+                svgElements.forEach(el => {
+                  el.style.display = 'block';
+                  el.style.visibility = 'visible';
+                });
+              }
+            }
+          }).then(canvas => {
+            // Compress the image for better performance
+            const compressedCanvas = document.createElement('canvas');
+            const ctx = compressedCanvas.getContext('2d');
+            compressedCanvas.width = canvas.width * 0.8; // 80% size
+            compressedCanvas.height = canvas.height * 0.8;
+            
+            ctx.drawImage(canvas, 0, 0, compressedCanvas.width, compressedCanvas.height);
+            
+            const imageData = compressedCanvas.toDataURL('image/png', 0.8); // 80% quality
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'screenshot',
+              data: imageData
+            }));
+          }).catch(err => {
+            console.error('html2canvas error:', err);
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'screenshotError',
+              error: 'Failed to capture map: ' + err.message
+            }));
+          });
+        }, 500); // 500ms delay to ensure rendering is complete
+      }
+
+      function captureMapScreenshotLowQuality() {
+        // Check if html2canvas is loaded
+        if (typeof html2canvas === 'undefined') {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'screenshotError',
+            error: 'Screenshot library not loaded'
+          }));
+          return;
+        }
+
+        // Small delay to ensure map is fully rendered
+        setTimeout(() => {
+          html2canvas(document.getElementById('map'), {
+            useCORS: true,
+            allowTaint: false,
+            scale: 0.5, // Much lower scale for speed
+            width: window.innerWidth * 0.5,
+            height: window.innerHeight * 0.5,
+            backgroundColor: '#ffffff',
+            logging: false,
+            foreignObjectRendering: true, // Enable SVG rendering
+            removeContainer: false, // Keep container structure
+            ignoreElements: function(element) {
+              // Skip complex elements that might slow down capture
+              return element.tagName === 'SCRIPT' || element.tagName === 'LINK' || 
+                     element.tagName === 'STYLE' || element.id === 'html2canvas-proxy';
+            },
+            onclone: function(clonedDoc) {
+              const clonedMap = clonedDoc.getElementById('map');
+              if (clonedMap) {
+                clonedMap.style.width = '50%';
+                clonedMap.style.height = '50%';
+                // Force redraw of SVG elements
+                const svgElements = clonedMap.querySelectorAll('svg, canvas');
+                svgElements.forEach(el => {
+                  el.style.display = 'block';
+                  el.style.visibility = 'visible';
+                });
+              }
+            }
+          }).then(canvas => {
+            // Even more aggressive compression
+            const compressedCanvas = document.createElement('canvas');
+            const ctx = compressedCanvas.getContext('2d');
+            compressedCanvas.width = canvas.width * 0.6; // 60% of already reduced size
+            compressedCanvas.height = canvas.height * 0.6;
+            
+            ctx.drawImage(canvas, 0, 0, compressedCanvas.width, compressedCanvas.height);
+            
+            const imageData = compressedCanvas.toDataURL('image/png', 0.6); // 60% quality
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'screenshot',
+              data: imageData
+            }));
+          }).catch(err => {
+            console.error('Low quality html2canvas error:', err);
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'screenshotError',
+              error: 'Failed to capture map with low quality: ' + err.message
+            }));
+          });
+        }, 300); // Shorter delay for low quality
+      }
+
+      function resetScreenshotState() {
+        // Clear any cached canvases or large objects
+        if (window.screenshotCanvas) {
+          window.screenshotCanvas = null;
+        }
+        // Force garbage collection hint
+        if (window.gc) {
+          window.gc();
         }
       }
 
@@ -284,6 +570,13 @@ Track your steps with WalkWins! 📱`;
                 centeredRef.current = true;
                 await sendLocate();
               }
+            } else if (data?.type === 'screenshot' && data.data) {
+              // Handle screenshot data
+              const base64Data = data.data.replace('data:image/png;base64,', '');
+              screenshotPromiseRef.current?.(base64Data);
+            } else if (data?.type === 'screenshotError') {
+              console.error('Screenshot error from WebView:', data.error);
+              Alert.alert('Screenshot Error', 'Failed to capture screenshot from map.');
             }
           } catch (err) {
             // ignore
