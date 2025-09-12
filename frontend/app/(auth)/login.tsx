@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, TouchableWithoutFeedback, Keyboard, Image } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 // @ts-ignore - firebaseConfig is a JS file without types, import may be implicitly any
 import { auth } from '../../firebaseConfig';
@@ -179,7 +179,23 @@ export default function Login() {
         <View style={[styles.card, { backgroundColor: 'rgba(31, 41, 55, 0.8)', borderColor: 'rgba(55, 65, 81, 0.7)' }]}>
         {/* --- START: Updated Title with Logo --- */}
         <View style={styles.titleContainer}>
-          <Logo />
+          <View style={styles.iconContainer}>
+            <MaskedView 
+              maskElement={
+                <Image 
+                  source={require('../../assets/images/icon.png')}
+                  style={styles.titleIcon}
+                />
+              }
+            >
+              <LinearGradient
+                colors={['#5EA02A', '#8BC34A', '#4CAF50']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.titleIcon}
+              />
+            </MaskedView>
+          </View>
           <GradientText style={styles.title}>WalkWins</GradientText>
         </View>
         {/* --- END: Updated Title with Logo --- */}
@@ -255,7 +271,20 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 40,
         fontWeight: 'bold',
-        marginLeft: 12,
+    },
+    iconContainer: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        borderWidth: 2,
+        borderColor: '#8BC34A',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    titleIcon: {
+        width: 32,
+        height: 32,
     },
     // --- END: New and Updated Title Styles ---
     subtitle: {

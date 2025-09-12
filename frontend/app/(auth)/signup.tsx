@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, ScrollView, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, ScrollView, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, collection, query, where, getDocs, updateDoc, increment } from 'firebase/firestore';
 // @ts-ignore - firebaseConfig is a JS file without types
@@ -315,206 +315,228 @@ export default function SignUp() {
       <LinearGradient colors={['#0D1B2A', '#1B263B', '#415A77']} style={styles.container}>
         <AnimatedBackground />
         
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+          style={{ flex: 1 }}
         >
-          <View style={styles.card}>
-            {/* Header with Logo */}
-            <View style={styles.titleContainer}>
-              <Logo />
-              <GradientText style={styles.title}>Join WalkWins</GradientText>
-            </View>
-            <Text style={styles.subtitle}>
-              {currentStep === 1 ? 'Start your fitness journey today!' : 'Complete your profile'}
-            </Text>
-
-            {/* Progress Bar */}
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBarBackground}>
-                <Animated.View style={styles.progressBarFill}>
-                  <LinearGradient
-                    colors={['#6FAF2D', '#8BC34A', '#4CAF50']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={[
-                      styles.progressGradient,
-                      { width: currentStep === 1 ? '50%' : '100%' }
-                    ]}
-                  />
-                </Animated.View>
+          <ScrollView 
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.card}>
+              {/* Header with Logo */}
+              <View style={styles.titleContainer}>
+                <View style={styles.iconContainer}>
+                  <MaskedView 
+                    maskElement={
+                      <Image 
+                        source={require('../../assets/images/icon.png')}
+                        style={styles.titleIcon}
+                      />
+                    }
+                  >
+                    <LinearGradient
+                      colors={['#5EA02A', '#8BC34A', '#4CAF50']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.titleIcon}
+                    />
+                  </MaskedView>
+                </View>
+                <GradientText style={styles.title}>Join WalkWins</GradientText>
               </View>
-            </View>
-            
-            {/* STEP 1: Basic Information */}
-            <View style={currentStep === 1 ? {} : { display: 'none' }}>
-              {/* Username Input */}
-              <Text style={styles.label}>Username</Text>
-              <Animated.View style={[styles.inputContainer, createInputAnimatedStyle(usernameFocused)]}>
-                <Ionicons name="person" size={20} color="#9CA3AF" style={styles.inputIcon} />
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="Enter username" 
-                  placeholderTextColor="#6B7280" 
-                  value={username} 
-                  onChangeText={setUsername}
-                  onFocus={() => { usernameFocused.value = true; }}
-                  onBlur={() => { usernameFocused.value = false; }}
-                />
-              </Animated.View>
+              <Text style={styles.subtitle}>
+                {currentStep === 1 ? 'Start your fitness journey today!' : 'Complete your profile'}
+              </Text>
 
-              {/* Email Input */}
-              <Text style={styles.label}>Email</Text>
-              <Animated.View style={[styles.inputContainer, createInputAnimatedStyle(emailFocused)]}>
-                <Ionicons name="mail" size={20} color="#9CA3AF" style={styles.inputIcon} />
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="Enter email" 
-                  placeholderTextColor="#6B7280" 
-                  value={email} 
-                  onChangeText={setEmail} 
-                  keyboardType="email-address" 
-                  autoCapitalize="none"
-                  onFocus={() => { emailFocused.value = true; }}
-                  onBlur={() => { emailFocused.value = false; }}
-                />
-              </Animated.View>
-
-              {/* Password Input */}
-              <Text style={styles.label}>Password</Text>
-              <Animated.View style={[styles.inputContainer, createInputAnimatedStyle(passwordFocused)]}>
-                <Ionicons name="lock-closed" size={20} color="#9CA3AF" style={styles.inputIcon} />
-                <TextInput 
-                  style={styles.passwordInput} 
-                  placeholder="Enter password" 
-                  placeholderTextColor="#6B7280" 
-                  value={password} 
-                  onChangeText={setPassword} 
-                  secureTextEntry={!isPasswordVisible}
-                  onFocus={() => { passwordFocused.value = true; }}
-                  onBlur={() => { passwordFocused.value = false; }}
-                />
-                <Pressable onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-                  <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color="#9CA3AF" style={styles.icon} />
-                </Pressable>
-              </Animated.View>
-
-              {/* Referral Code Input */}
-              <Text style={styles.label}>Referral Code (Optional)</Text>
-              <Animated.View style={[styles.inputContainer, createInputAnimatedStyle(referralFocused)]}>
-                <Ionicons name="gift" size={20} color="#9CA3AF" style={styles.inputIcon} />
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="Enter referral code" 
-                  placeholderTextColor="#6B7280" 
-                  value={referralCode} 
-                  onChangeText={setReferralCode}
-                  autoCapitalize="characters"
-                  onFocus={() => { referralFocused.value = true; }}
-                  onBlur={() => { referralFocused.value = false; }}
-                />
-              </Animated.View>
-
-              {/* Next Button */}
-              <BrandGradientButton onPress={handleNext} text="Next" />
-
-              {/* Login Link */}
-              <Pressable onPress={() => router.replace('/login')}>
-                <Text style={styles.linkText}>
-                  Already have an account? <Text style={styles.linkHighlight}>Login</Text>
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* STEP 2: Additional Information */}
-            <View style={currentStep === 2 ? {} : { display: 'none' }}>
-              <ScrollView 
-                style={styles.step2ScrollView}
-                showsVerticalScrollIndicator={false}
-                nestedScrollEnabled={true}
-              >
-                {/* Age Input */}
-                <Text style={styles.label}>Age</Text>
-                <Animated.View style={[styles.inputContainer, createInputAnimatedStyle(ageFocused)]}>
-                  <Ionicons name="calendar" size={20} color="#9CA3AF" style={styles.inputIcon} />
+              {/* Progress Bar */}
+              <View style={styles.progressContainer}>
+                <View style={styles.progressBarBackground}>
+                  <Animated.View style={styles.progressBarFill}>
+                    <LinearGradient
+                      colors={['#6FAF2D', '#8BC34A', '#4CAF50']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={[
+                        styles.progressGradient,
+                        { width: currentStep === 1 ? '50%' : '100%' }
+                      ]}
+                    />
+                  </Animated.View>
+                </View>
+              </View>
+              
+              {/* STEP 1: Basic Information */}
+              <View style={currentStep === 1 ? {} : { display: 'none' }}>
+                {/* Username Input */}
+                <Text style={styles.label}>Username</Text>
+                <Animated.View style={[styles.inputContainer, createInputAnimatedStyle(usernameFocused)]}>
+                  <Ionicons name="person" size={20} color="#9CA3AF" style={styles.inputIcon} />
                   <TextInput 
                     style={styles.input} 
-                    placeholder="Enter age" 
+                    placeholder="Enter username" 
                     placeholderTextColor="#6B7280" 
-                    value={age} 
-                    onChangeText={setAge} 
-                    keyboardType="numeric"
-                    onFocus={() => { ageFocused.value = true; }}
-                    onBlur={() => { ageFocused.value = false; }}
+                    value={username} 
+                    onChangeText={setUsername}
+                    onFocus={() => { usernameFocused.value = true; }}
+                    onBlur={() => { usernameFocused.value = false; }}
                   />
                 </Animated.View>
 
-                {/* Gender Dropdown */}
-                <Text style={styles.label}>Gender</Text>
-                <View style={styles.dropdownContainer}>
-                  <Pressable 
-                    style={[styles.dropdownButton, isGenderDropdownOpen && styles.dropdownButtonActive]}
-                    onPress={() => setIsGenderDropdownOpen(!isGenderDropdownOpen)}
-                  >
-                    <Ionicons name="people" size={20} color="#9CA3AF" style={styles.inputIcon} />
-                    <Text style={[styles.dropdownText, !gender && styles.placeholderText]}>
-                      {gender || 'Select gender'}
-                    </Text>
-                    <Ionicons 
-                      name={isGenderDropdownOpen ? "chevron-up" : "chevron-down"} 
-                      size={20} 
-                      color="#9CA3AF" 
-                      style={styles.icon} 
-                    />
+                {/* Email Input */}
+                <Text style={styles.label}>Email</Text>
+                <Animated.View style={[styles.inputContainer, createInputAnimatedStyle(emailFocused)]}>
+                  <Ionicons name="mail" size={20} color="#9CA3AF" style={styles.inputIcon} />
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Enter email" 
+                    placeholderTextColor="#6B7280" 
+                    value={email} 
+                    onChangeText={setEmail} 
+                    keyboardType="email-address" 
+                    autoCapitalize="none"
+                    onFocus={() => { emailFocused.value = true; }}
+                    onBlur={() => { emailFocused.value = false; }}
+                  />
+                </Animated.View>
+
+                {/* Password Input */}
+                <Text style={styles.label}>Password</Text>
+                <Animated.View style={[styles.inputContainer, createInputAnimatedStyle(passwordFocused)]}>
+                  <Ionicons name="lock-closed" size={20} color="#9CA3AF" style={styles.inputIcon} />
+                  <TextInput 
+                    style={styles.passwordInput} 
+                    placeholder="Enter password" 
+                    placeholderTextColor="#6B7280" 
+                    value={password} 
+                    onChangeText={setPassword} 
+                    secureTextEntry={!isPasswordVisible}
+                    onFocus={() => { passwordFocused.value = true; }}
+                    onBlur={() => { passwordFocused.value = false; }}
+                  />
+                  <Pressable onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
+                    <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color="#9CA3AF" style={styles.icon} />
                   </Pressable>
-                  
-                  {isGenderDropdownOpen && (
-                    <View style={styles.dropdownMenu}>
-                      {genderOptions.map((option, index) => (
-                        <Pressable
-                          key={option}
-                          style={[
-                            styles.dropdownOption,
-                            index === genderOptions.length - 1 && styles.lastDropdownOption
-                          ]}
-                          onPress={() => {
-                            setGender(option);
-                            setIsGenderDropdownOpen(false);
-                          }}
-                        >
-                          <Text style={styles.dropdownOptionText}>{option}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  )}
-                </View>
+                </Animated.View>
 
-                {/* Selection Groups */}
-                <SelectionGroup title="Fitness Goal" options={fitnessGoals} selected={fitnessGoal} onSelect={setFitnessGoal} />
-                <SelectionGroup title="Occupation Type" options={occupationTypes} selected={occupation} onSelect={setOccupation} />
-                <SelectionGroup title="Preferred Notification Time" options={preferredTimes} selected={preferredTime} onSelect={setPreferredTime} />
-              </ScrollView>
+                {/* Referral Code Input */}
+                <Text style={styles.label}>Referral Code (Optional)</Text>
+                <Animated.View style={[styles.inputContainer, createInputAnimatedStyle(referralFocused)]}>
+                  <Ionicons name="gift" size={20} color="#9CA3AF" style={styles.inputIcon} />
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Enter referral code" 
+                    placeholderTextColor="#6B7280" 
+                    value={referralCode} 
+                    onChangeText={setReferralCode}
+                    autoCapitalize="characters"
+                    onFocus={() => { referralFocused.value = true; }}
+                    onBlur={() => { referralFocused.value = false; }}
+                  />
+                </Animated.View>
 
-              {/* Action Buttons - Fixed at bottom */}
-              <View style={styles.buttonRow}>
-                <Pressable style={styles.backButton} onPress={handleBack}>
-                  <Text style={styles.backButtonText}>Back</Text>
-                </Pressable>
-                <View style={styles.buttonSpacer} />
-                <Pressable style={styles.createAccountButton} onPress={handleSignUp}>
-                  <LinearGradient
-                    colors={['#6FAF2D', '#8BC34A', '#4CAF50']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.createAccountGradient}
-                  >
-                    <Text style={styles.createAccountText}>Create Account</Text>
-                  </LinearGradient>
+                {/* Next Button */}
+                <BrandGradientButton onPress={handleNext} text="Next" />
+
+                {/* Login Link */}
+                <Pressable onPress={() => router.replace('/login')}>
+                  <Text style={styles.linkText}>
+                    Already have an account? <Text style={styles.linkHighlight}>Login</Text>
+                  </Text>
                 </Pressable>
               </View>
+
+              {/* STEP 2: Additional Information */}
+              <View style={currentStep === 2 ? {} : { display: 'none' }}>
+                <ScrollView 
+                  style={styles.step2ScrollView}
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled={true}
+                >
+                  {/* Age Input */}
+                  <Text style={styles.label}>Age</Text>
+                  <Animated.View style={[styles.inputContainer, createInputAnimatedStyle(ageFocused)]}>
+                    <Ionicons name="calendar" size={20} color="#9CA3AF" style={styles.inputIcon} />
+                    <TextInput 
+                      style={styles.input} 
+                      placeholder="Enter age" 
+                      placeholderTextColor="#6B7280" 
+                      value={age} 
+                      onChangeText={setAge} 
+                      keyboardType="numeric"
+                      onFocus={() => { ageFocused.value = true; }}
+                      onBlur={() => { ageFocused.value = false; }}
+                    />
+                  </Animated.View>
+
+                  {/* Gender Dropdown */}
+                  <Text style={styles.label}>Gender</Text>
+                  <View style={styles.dropdownContainer}>
+                    <Pressable 
+                      style={[styles.dropdownButton, isGenderDropdownOpen && styles.dropdownButtonActive]}
+                      onPress={() => setIsGenderDropdownOpen(!isGenderDropdownOpen)}
+                    >
+                      <Ionicons name="people" size={20} color="#9CA3AF" style={styles.inputIcon} />
+                      <Text style={[styles.dropdownText, !gender && styles.placeholderText]}>
+                        {gender || 'Select gender'}
+                      </Text>
+                      <Ionicons 
+                        name={isGenderDropdownOpen ? "chevron-up" : "chevron-down"} 
+                        size={20} 
+                        color="#9CA3AF" 
+                        style={styles.icon} 
+                      />
+                    </Pressable>
+                    
+                    {isGenderDropdownOpen && (
+                      <View style={styles.dropdownMenu}>
+                        {genderOptions.map((option, index) => (
+                          <Pressable
+                            key={option}
+                            style={[
+                              styles.dropdownOption,
+                              index === genderOptions.length - 1 && styles.lastDropdownOption
+                            ]}
+                            onPress={() => {
+                              setGender(option);
+                              setIsGenderDropdownOpen(false);
+                            }}
+                          >
+                            <Text style={styles.dropdownOptionText}>{option}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Selection Groups */}
+                  <SelectionGroup title="Fitness Goal" options={fitnessGoals} selected={fitnessGoal} onSelect={setFitnessGoal} />
+                  <SelectionGroup title="Occupation Type" options={occupationTypes} selected={occupation} onSelect={setOccupation} />
+                  <SelectionGroup title="Preferred Notification Time" options={preferredTimes} selected={preferredTime} onSelect={setPreferredTime} />
+                </ScrollView>
+
+                {/* Action Buttons - Fixed at bottom */}
+                <View style={styles.buttonRow}>
+                  <Pressable style={styles.backButton} onPress={handleBack}>
+                    <Text style={styles.backButtonText}>Back</Text>
+                  </Pressable>
+                  <View style={styles.buttonSpacer} />
+                  <Pressable style={styles.createAccountButton} onPress={handleSignUp}>
+                    <LinearGradient
+                      colors={['#6FAF2D', '#8BC34A', '#4CAF50']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.createAccountGradient}
+                    >
+                      <Text style={styles.createAccountText}>Create Account</Text>
+                    </LinearGradient>
+                  </Pressable>
+                </View>
+              </View>
             </View>
-          </View>
-        </ScrollView>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </LinearGradient>
     </TouchableWithoutFeedback>
   );
@@ -577,7 +599,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    marginLeft: 12,
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#8BC34A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  titleIcon: {
+    width: 28,
+    height: 28,
   },
   subtitle: {
     fontSize: 16,

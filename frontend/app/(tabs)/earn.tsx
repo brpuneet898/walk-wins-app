@@ -376,6 +376,24 @@ export default function SocialScreen() {
               </View>
             </LinearGradient>
           </View>
+
+          <View style={styles.challengeCard}>
+            <LinearGradient
+              colors={['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']}
+              style={styles.cardGradient}
+            >
+              <View style={styles.challengeHeader}>
+                <FontAwesome name="gamepad" size={20} color="#FFD700" />
+                <ThemedText style={styles.challengeTitle}>Play Games</ThemedText>
+              </View>
+              <View style={styles.challengeContent}>
+                <ThemedText style={styles.comingSoonText}>
+                  Coming soon!
+                </ThemedText>
+              </View>
+            </LinearGradient>
+          </View>
+
         </ThemedView>
       </ScrollView>
     </LinearGradient>

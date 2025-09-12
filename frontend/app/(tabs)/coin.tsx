@@ -102,7 +102,7 @@ export default function CoinScreen() {
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   
   // Available withdrawal amounts
-  const withdrawalAmounts = [100, 2, 500, 1000, 2000, 4000, 5000, 10000];
+  const withdrawalAmounts = [100, 500, 1000, 2000, 4000, 7000, 10000];
   
   // Function to format timestamp
   const formatTransactionDate = (timestamp: any) => {

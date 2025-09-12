@@ -13,6 +13,7 @@ import Animated, {
   withSpring,
   runOnJS,
   Easing,
+  withDelay,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -23,7 +24,8 @@ interface SplashScreenProps {
 const SplashScreen: React.FC<SplashScreenProps> = ({ onAnimationComplete }) => {
   const scale = useSharedValue(0);
   const rotation = useSharedValue(0);
-  const opacity = useSharedValue(1);
+  const opacityImage = useSharedValue(1);
+  const opacityMask = useSharedValue(1);
 
   useEffect(() => {
     // Start the animation sequence
@@ -45,13 +47,19 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onAnimationComplete }) => {
         withTiming(2, { duration: 100 }),
         withTiming(0, { duration: 100 }),
         withTiming(0, { duration: 400 }, () => {
-          // Step 3: Fade out and complete (300ms)
-          opacity.value = withTiming(0, {
-            duration: 300,
+          // Step 3: Fade out image first (200ms)
+          opacityImage.value = withTiming(0, {
+            duration: 200,
             easing: Easing.in(Easing.ease),
           }, () => {
-            // Animation complete, transition to main app
-            runOnJS(onAnimationComplete)();
+            // Step 4: Fade out mask with slight delay (200ms)
+            opacityMask.value = withDelay(100, withTiming(0, {
+              duration: 200,
+              easing: Easing.in(Easing.ease),
+            }, () => {
+              // Animation complete, transition to main app
+              runOnJS(onAnimationComplete)();
+            }));
           });
         })
       );
@@ -67,31 +75,37 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onAnimationComplete }) => {
     };
   });
 
-  const containerAnimatedStyle = useAnimatedStyle(() => {
+  const imageAnimatedStyle = useAnimatedStyle(() => {
     return {
-      opacity: opacity.value,
+      opacity: opacityImage.value,
+    };
+  });
+
+  const maskAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: opacityMask.value,
     };
   });
 
   return (
-    <Animated.View style={[styles.container, containerAnimatedStyle]}>
+    <View style={styles.container}>
       <LinearGradient
         colors={['#0D1B2A', '#1B263B', '#415A77']}
         style={styles.gradient}
       >
         <View style={styles.logoContainer}>
           <Animated.View style={[styles.logoWrapper, logoAnimatedStyle]}>
-            <View style={styles.circularMask}>
-              <Image
+            <Animated.View style={[styles.circularMask, maskAnimatedStyle]}>
+              <Animated.Image
                 source={require('../assets/images/icon.png')}
-                style={styles.logo}
+                style={[styles.logo, imageAnimatedStyle]}
                 resizeMode="cover"
               />
-            </View>
+            </Animated.View>
           </Animated.View>
         </View>
       </LinearGradient>
-    </Animated.View>
+    </View>
   );
 };
 

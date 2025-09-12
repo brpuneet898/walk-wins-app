@@ -218,9 +218,9 @@ export default function TabLayout() {
             }} 
           />
           <Tabs.Screen 
-            name="social" 
+            name="earn" 
             options={{ 
-              title: 'Social', 
+              title: 'Earn', 
               tabBarIcon: ({ color, focused }) => (
                 <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
                   <IconSymbol size={26} name="person.2.fill" color={color} />
