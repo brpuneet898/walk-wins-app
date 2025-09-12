@@ -133,6 +133,7 @@ const SelectionOption = ({ option, isSelected, onSelect }: {
     <Pressable
       onPress={() => onSelect(option)}
       style={{ flex: 1, marginHorizontal: 4 }}
+      delayLongPress={600}
     >
       <LinearGradient
         colors={isSelected ? ['#6FAF2D', '#8BC34A'] : ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
@@ -460,6 +461,9 @@ export default function SignUp() {
                   bounces={true}                    // <- iOS bounce effect
                   overScrollMode="auto"             // <- Android over-scroll effect
                   showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"     
+                  scrollEnabled={true}                    
+                  contentContainerStyle={{ flexGrow: 1 }}
                 >
                   {/* Age Input */}
                   <Text style={styles.label}>Age</Text>
