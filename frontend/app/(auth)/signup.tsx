@@ -451,8 +451,15 @@ export default function SignUp() {
               <View style={currentStep === 2 ? {} : { display: 'none' }}>
                 <ScrollView 
                   style={styles.step2ScrollView}
-                  showsVerticalScrollIndicator={false}
+                  showsVerticalScrollIndicator={true}
                   nestedScrollEnabled={true}
+                  indicatorStyle='white'
+                  persistentScrollbar={true}
+                  decelerationRate={0.98}      // <- Smoother deceleration
+                  scrollEventThrottle={1}         // <- Smoother scroll events (60fps)
+                  bounces={true}                    // <- iOS bounce effect
+                  overScrollMode="auto"             // <- Android over-scroll effect
+                  showsHorizontalScrollIndicator={false}
                 >
                   {/* Age Input */}
                   <Text style={styles.label}>Age</Text>
@@ -512,7 +519,7 @@ export default function SignUp() {
 
                   {/* Selection Groups */}
                   <SelectionGroup title="Fitness Goal" options={fitnessGoals} selected={fitnessGoal} onSelect={setFitnessGoal} />
-                  <SelectionGroup title="Occupation Type" options={occupationTypes} selected={occupation} onSelect={setOccupation} />
+                  <SelectionGroup title="Daily Activity Levels" options={occupationTypes} selected={occupation} onSelect={setOccupation} />
                   <SelectionGroup title="Preferred Notification Time" options={preferredTimes} selected={preferredTime} onSelect={setPreferredTime} />
                 </ScrollView>
 
@@ -546,6 +553,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f192eff',
+    paddingTop: 30,
   },
   backgroundContainer: {
     position: 'absolute',

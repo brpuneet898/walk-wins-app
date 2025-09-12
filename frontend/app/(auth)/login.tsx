@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, TouchableWithoutFeedback, Keyboard, Image } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, TouchableWithoutFeedback, Keyboard, Image, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 // @ts-ignore - firebaseConfig is a JS file without types, import may be implicitly any
 import { auth } from '../../firebaseConfig';
@@ -172,10 +172,17 @@ export default function Login() {
   });
 
   return (
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
     <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); isEmailFocused.value = false; isPasswordFocused.value = false; }}>
       <LinearGradient colors={['#0D1B2A', '#1B263B', '#415A77']} style={styles.container}>
         <AnimatedBackground />
-        
+        <ScrollView 
+          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
+          keyboardShouldPersistTaps="handled"
+        > 
         <View style={[styles.card, { backgroundColor: 'rgba(31, 41, 55, 0.8)', borderColor: 'rgba(55, 65, 81, 0.7)' }]}>
         {/* --- START: Updated Title with Logo --- */}
         <View style={styles.titleContainer}>
@@ -199,13 +206,13 @@ export default function Login() {
           <GradientText style={styles.title}>WalkWins</GradientText>
         </View>
         {/* --- END: Updated Title with Logo --- */}
-  <Text style={[styles.subtitle, { color: theme.text }]}>Welcome back! Let's get moving.</Text>
+  <Text style={[styles.subtitle, { color: '#FFFFFF' }]}>Welcome back! Let's get moving.</Text>
         
-        <Text style={[styles.label, { color: theme.text }]}>Email</Text>
+        <Text style={[styles.label, { color: '#FFFFFF' }]}>Email</Text>
         <Animated.View style={[styles.inputContainer, emailContainerAnimatedStyle]}>
           <Ionicons name="mail" size={20} color={theme.icon} style={styles.inputIcon} />
           <TextInput
-            style={[styles.inputField, { color: theme.text }]}
+            style={[styles.inputField, { color: '#FFFFFF' }]}
             placeholder=""
             placeholderTextColor={theme.icon}
             value={email}
@@ -217,11 +224,11 @@ export default function Login() {
           />
         </Animated.View>
 
-        <Text style={[styles.label, { color: theme.text }]}>Password</Text>
+        <Text style={[styles.label, { color: '#FFFFFF' }]}>Password</Text>
         <Animated.View style={[styles.inputContainer, passwordContainerAnimatedStyle]}>
           <Ionicons name="lock-closed" size={20} color={theme.icon} style={styles.inputIcon} />
           <TextInput
-            style={[styles.inputField, { color: theme.text }]}
+            style={[styles.inputField, { color: '#FFFFFF' }]}
             placeholder=""
             placeholderTextColor={theme.icon}
             value={password}
@@ -238,11 +245,13 @@ export default function Login() {
         <BrandGradientButton onPress={handleLogin} text="Login" />
 
         <Pressable onPress={() => router.push('/signup')}>
-      <Text style={[styles.linkText, { color: theme.text }]}>Don't have an account? <Text style={[styles.linkHighlight, { color: '#8BC34A' }]}>Sign up now</Text></Text>
+      <Text style={[styles.linkText, { color: '#FFFFFF' }]}>Don't have an account? <Text style={[styles.linkHighlight, { color: '#8BC34A' }]}>Sign up now</Text></Text>
         </Pressable>
       </View>
+      </ScrollView>
       </LinearGradient>
     </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
