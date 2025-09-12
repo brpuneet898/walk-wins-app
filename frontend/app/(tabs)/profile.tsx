@@ -22,6 +22,7 @@ import LevelUpModal from '../../components/LevelUpModal';
 // WebView for milestone ad
 // @ts-ignore
 import { WebView } from 'react-native-webview';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // User profile type
 interface UserProfile {
@@ -64,6 +65,7 @@ export default function ProfileScreen() {
   const [showLevelInfoModal, setShowLevelInfoModal] = useState(false);
 
   const buttonScale = useSharedValue(1);
+  const insets = useSafeAreaInsets();
 
   // 👈 ADD: Function to get user initial
   const getUserInitial = () => {
@@ -418,10 +420,17 @@ export default function ProfileScreen() {
       <ScrollView 
         style={styles.scrollView} 
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollViewContent}
+        contentContainerStyle={{
+          paddingBottom: 90 + insets.bottom + 30, // Tab bar height + bottom inset + buffer
+        }}
       >
         {/* Header */}
-        <View style={styles.header}>
+        <View style={{
+          paddingHorizontal: 20,
+          paddingTop: 60 + insets.top,
+          paddingBottom: 30,
+          alignItems: 'center',
+        }}>
           <Text style={styles.headerTitle}>Profile</Text>
         </View>
 

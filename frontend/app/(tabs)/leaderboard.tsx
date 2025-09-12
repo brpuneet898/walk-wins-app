@@ -16,6 +16,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import MaskedView from '@react-native-masked-view/masked-view';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const AnimatedBackground = () => {
   const scale1 = useSharedValue(1);
@@ -202,6 +203,7 @@ const AnimatedLeaderboardItem = ({ item, index }: { item: any; index: number }) 
 
 export default function LeaderboardScreen() {
   const { leaderboardData } = useLeaderboard();
+  const insets = useSafeAreaInsets();
 
   const renderItem = ({ item, index }: { item: typeof leaderboardData[0]; index: number }) => (
     <AnimatedLeaderboardItem item={item} index={index} />
@@ -215,7 +217,13 @@ export default function LeaderboardScreen() {
       <AnimatedBackground />
       <StatusBar barStyle="light-content" backgroundColor="#0D1B2A" />
       
-      <View style={styles.headerContainer}>
+      <View style={{
+        alignItems: 'center',
+        paddingTop: 120 + insets.top,
+        paddingBottom: 40,
+        paddingHorizontal: 20,
+        zIndex: 1,
+      }}>
         <View style={styles.headerContent}>
           <GradientText style={styles.header}>Daily Leaderboard</GradientText>
           <PulsatingLiveIndicator />
@@ -237,7 +245,10 @@ export default function LeaderboardScreen() {
             </View>
           }
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={{
+            paddingBottom: 90 + insets.bottom + 30, // Tab bar height + bottom inset + buffer
+            paddingTop: 20,
+          }}
         />
       </View>
     </LinearGradient>

@@ -7,6 +7,7 @@ import { useSteps } from '../../context/StepContext';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function MapScreen() {
   const [ready, setReady] = useState(false);
@@ -21,6 +22,7 @@ export default function MapScreen() {
   const centeredRef = useRef(false);
   const screenshotPromiseRef = useRef<((value: string) => void) | null>(null);
   const { lifetimeSteps } = useSteps();
+  const insets = useSafeAreaInsets();
 
   // Add effect to ensure view is ready
   useEffect(() => {
@@ -602,7 +604,7 @@ Track your steps with WalkWins! 📱`,
       <TouchableOpacity
         style={[
           styles.trackingButton,
-          { backgroundColor: isTracking ? '#FF4757' : '#8BC34A' }
+          { backgroundColor: isTracking ? '#FF4757' : '#8BC34A', bottom: 110 + insets.bottom }
         ]}
         onPress={toggleTracking}
       >
@@ -613,7 +615,7 @@ Track your steps with WalkWins! 📱`,
 
       {/* Share Button */}
       <TouchableOpacity 
-        style={styles.screenshotButton} 
+        style={[styles.screenshotButton, { top: 60 + insets.top }]} 
         onPress={takeScreenshotAndShare}
       >
         {/* <Text style={styles.screenshotText}>�</Text> */}
@@ -622,7 +624,7 @@ Track your steps with WalkWins! 📱`,
 
       {/* Existing Locator Button */}
       <TouchableOpacity
-        style={styles.locatorButton}
+        style={[styles.locatorButton, { bottom: 110 + insets.bottom }]}
         onPress={() => {
           // user pressed locator; center map immediately
           sendLocate();

@@ -16,6 +16,7 @@ import { calculateTotalEarnings } from '../../utils/earnings';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db } from '../../firebaseConfig';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- START: GradientText Component ---
 const GradientText = (props: any) => (
@@ -102,6 +103,7 @@ export default function RewardsScreen() {
   const [totalEarned, setTotalEarned] = useState(0);
   const [earningsLoading, setEarningsLoading] = useState(true);
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     const loadEarnings = async () => {
@@ -151,7 +153,17 @@ export default function RewardsScreen() {
     >
       <AnimatedBackground />
 
-      <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        style={{
+          flex: 1,
+          paddingHorizontal: 16,
+          paddingTop: 60 + insets.top,
+        }}
+        contentContainerStyle={{
+          paddingBottom: 90 + insets.bottom + 30, // Tab bar height + bottom inset + buffer
+        }}
+      >
         <Text style={styles.header}>Rewards Hub</Text>
 
         {/* Current Points Display */}

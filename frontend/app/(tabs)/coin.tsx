@@ -20,6 +20,7 @@ import { doc, updateDoc, increment, getDoc, collection, query, orderBy, limit, g
 // Note: install with `expo install react-native-webview` if missing
 // @ts-ignore
 import { WebView } from 'react-native-webview';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- START: GradientText Component ---
 const GradientText = (props: any) => (
@@ -85,6 +86,7 @@ const AnimatedBackground = () => {
 export default function CoinScreen() {
   const { coins = 0, lifetimeSteps = 0, boostSteps = 0, setCoins } = useSteps() as any;
   const { currentLevel } = useLevelSystem();
+  const insets = useSafeAreaInsets();
   const [isWatching, setIsWatching] = useState(false);
   const [showAdModal, setShowAdModal] = useState(false);
   const [adLoading, setAdLoading] = useState(true);
@@ -411,7 +413,10 @@ export default function CoinScreen() {
         
         <ScrollView 
           style={styles.scrollContainer}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: 60 + insets.top, paddingBottom: 90 + insets.bottom + 30 }
+          ]}
           showsVerticalScrollIndicator={false}
           bounces={false}
         >

@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FontAwesome } from '@expo/vector-icons';
 import { auth, db } from '../../firebaseConfig';
 import { doc, getDoc, setDoc, updateDoc, increment, deleteField, runTransaction } from 'firebase/firestore';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const getLocalDateString = (date = new Date()) => {
   const year = date.getFullYear();
@@ -34,6 +35,7 @@ export default function SocialScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasClaimedReward, setHasClaimedReward] = useState(false);
   const { isLoggingOut, coins = 0, setCoins, dailyRecords } = useSteps();
+  const insets = useSafeAreaInsets();
 
   // Join challenge function
   const joinChallenge = async () => {
@@ -224,8 +226,18 @@ export default function SocialScreen() {
       style={styles.container}
     >
       <StatusBar barStyle="light-content" backgroundColor="#0D1B2A" />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <ThemedView style={styles.headerContainer}>
+      <ScrollView 
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingBottom: 90 + insets.bottom + 30, // Tab bar height + bottom inset + buffer
+        }}
+      >
+        <ThemedView style={{
+          backgroundColor: 'transparent',
+          alignItems: 'center',
+          paddingTop: 60 + insets.top,
+          paddingBottom: 20,
+        }}>
           <ThemedText type="title" style={styles.title}>
             Challenges
           </ThemedText>

@@ -12,6 +12,7 @@ import { LeaderboardProvider, useLeaderboard } from '../../context/LeaderboardCo
 import { auth, db } from '../../firebaseConfig';
 import { doc, getDoc, collection, getDocs, query, orderBy, collectionGroup, limit } from 'firebase/firestore';
 import MusicBar from '../../components/MusicBar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const getLocalDateString = (date = new Date()) => {
   const year = date.getFullYear();
@@ -150,6 +151,8 @@ const TabBarBackground = () => (
 );
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  
   return (
     <StepProvider>
       <LeaderboardProvider>
@@ -165,10 +168,10 @@ export default function TabLayout() {
             tabBarBackground: () => <TabBarBackground />,
             tabBarStyle: {
               position: 'absolute',
-              bottom: 0,
+              bottom: insets.bottom, // Use safe area inset instead of 0
               left: 0,
               right: 0,
-              height: 90, // Increased height
+              height: 60 + insets.bottom, // Add bottom inset to height
               borderTopLeftRadius: 30, // More rounded
               borderTopRightRadius: 30,
               backgroundColor: 'transparent',
@@ -177,8 +180,8 @@ export default function TabLayout() {
               shadowOffset: { width: 0, height: -10 },
               shadowOpacity: 0.25,
               shadowRadius: 25,
-              elevation: 20,
-              paddingBottom: Platform.OS === 'ios' ? 30 : 15,
+              elevation: 40,
+              paddingBottom: Platform.OS === 'ios' ? 30 + insets.bottom : 0 + insets.bottom, // Add insets to padding
               paddingTop: 15,
               paddingHorizontal: 10,
             },
@@ -271,6 +274,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
+    bottom: -10,
     overflow: 'hidden',
   },
   tabBarGradient: {

@@ -42,6 +42,7 @@ const getLocalDateString = (date = new Date()) => {
 import { calculateTotalEarnings } from '../../utils/earnings';
 // Level system imports  
 import { useLevelSystem } from '../../context/LevelContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const AnimatedBackground = () => {
   const scale1 = useSharedValue(1);
@@ -187,6 +188,9 @@ export default function HomeScreen() {
   
   // Track previous todaysSteps to detect when walking starts
   const prevTodaysStepsRef = useRef(todaysSteps);
+
+  // Safe area insets
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     // If todaysSteps went from 0 to > 0 and weeklyData is empty, fetch data
@@ -1330,11 +1334,21 @@ export default function HomeScreen() {
         {/* Single ScrollView with all content */}
         <ScrollView 
           style={styles.scrollContainer}
-          contentContainerStyle={styles.scrollContentContainer}
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingBottom: 110 + insets.bottom + 30, // Tab bar height + bottom inset + buffer
+          }}
           showsVerticalScrollIndicator={false}
         >
           {/* Header */}
-          <View style={styles.headerContainer}>
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingHorizontal: 20,
+            paddingTop: 60 + insets.top, // Add top safe area
+            paddingBottom: 20,
+          }}>
             <View style={styles.profileSection}>
               <Pressable style={styles.avatar} onPress={() => router.push('/profile')}>
                 {/* 👈 UPDATED: Changed fallback icon color to blue */}
@@ -1414,8 +1428,22 @@ export default function HomeScreen() {
                 <Text style={styles.goalText}>of {dailyStepGoal.toLocaleString()} goal</Text>
                 
                 <View style={styles.locationDot}>
-                  <Ionicons name="location" size={12} color="#8BC34A" />
+                  <Ionicons name="walk" size={18} color="#8BC34A" />
                 </View>
+
+                <Text style={{ 
+                  color: '#ADFF2F',
+                  fontSize: 13,
+                  marginTop: 10,
+                  fontWeight: '600',
+                  maxWidth: 200,
+                  textAlign: 'center',
+                  textShadowColor: '#ADFF2F',
+                  textShadowOffset: { width: 0, height: 0 },
+                  textShadowRadius: 4,
+                  }}>
+                  Calories Burnt:{'\n'} {Math.floor(todaysSteps * 0.05)}
+                </Text>
               </View>
             </LinearGradient>
           </View>
