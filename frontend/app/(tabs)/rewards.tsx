@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { useSteps } from '../../context/StepContext';
 import { useLevelSystem } from '../../context/LevelContext';
 import Animated, {
@@ -13,6 +13,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { calculateTotalEarnings } from '../../utils/earnings';
+import { doc, updateDoc } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
+import { db } from '../../firebaseConfig';
 
 // --- START: GradientText Component ---
 const GradientText = (props: any) => (
@@ -98,6 +101,7 @@ export default function RewardsScreen() {
   const { currentLevel } = useLevelSystem();
   const [totalEarned, setTotalEarned] = useState(0);
   const [earningsLoading, setEarningsLoading] = useState(true);
+  const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
 
   useEffect(() => {
     const loadEarnings = async () => {
@@ -115,6 +119,30 @@ export default function RewardsScreen() {
 
     loadEarnings();
   }, [lifetimeSteps, coins, boostSteps, currentLevel]);
+
+  const handleRedeem = async () => {
+    if (!selectedAmount) return;
+
+    try {
+      const auth = getAuth();
+      const user = auth.currentUser;
+
+      if (user) {
+        const userDocRef = doc(db, 'users', user.uid);
+        await updateDoc(userDocRef, { voucher_amount: selectedAmount });
+        Alert.alert(
+          'Request Sent',
+          'Your request for the gift voucher has been sent. It will be processed within 48 hours.'
+        );
+        setSelectedAmount(null); // Reset selection after successful submission
+      } else {
+        Alert.alert('Error', 'User not authenticated. Please log in again.');
+      }
+    } catch (error) {
+      console.error('Error updating voucher amount:', error);
+      Alert.alert('Error', 'Failed to submit voucher request. Please try again.');
+    }
+  };
 
   return (
     <LinearGradient
@@ -164,94 +192,47 @@ export default function RewardsScreen() {
               style={styles.rewardGradient}
             >
               <View style={styles.rewardIcon}>
-                <IconSymbol name="trophy.fill" size={24} color="#FFD700" />
-              </View>
-              <View style={styles.rewardInfo}>
-                <Text style={styles.rewardTitle}>Premium Badge</Text>
-                <Text style={styles.rewardDescription}>Show off your walking achievements</Text>
-                <Text style={styles.rewardPrice}>500 points</Text>
-              </View>
-              <TouchableOpacity style={styles.redeemButton}>
-                <Text style={styles.redeemButtonText}>Redeem</Text>
-              </TouchableOpacity>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.rewardItem}>
-            <LinearGradient
-              colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.03)']}
-              style={styles.rewardGradient}
-            >
-              <View style={styles.rewardIcon}>
                 <IconSymbol name="gift" size={24} color="#8BC34A" />
               </View>
               <View style={styles.rewardInfo}>
-                <Text style={styles.rewardTitle}>Bonus Steps</Text>
-                <Text style={styles.rewardDescription}>Get 1000 bonus steps added to your total</Text>
-                <Text style={styles.rewardPrice}>200 points</Text>
+                <Text style={styles.rewardTitle}>Gift Vouchers</Text>
+                <Text style={styles.rewardDescription}>Redeem your earnings for gift vouchers</Text>
+                <View style={styles.amountButtonsContainer}>
+                  <TouchableOpacity
+                    style={[styles.amountButton, selectedAmount === 500 && styles.selectedAmountButton, totalEarned < 500 && styles.disabledAmountButton]}
+                    onPress={() => totalEarned >= 500 && setSelectedAmount(500)}
+                    disabled={totalEarned < 500}
+                  >
+                    <Text style={styles.amountButtonText}>500</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.amountButton, selectedAmount === 1000 && styles.selectedAmountButton, totalEarned < 1000 && styles.disabledAmountButton]}
+                    onPress={() => totalEarned >= 1000 && setSelectedAmount(1000)}
+                    disabled={totalEarned < 1000}
+                  >
+                    <Text style={styles.amountButtonText}>1000</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.amountButton, selectedAmount === 2500 && styles.selectedAmountButton, totalEarned < 2500 && styles.disabledAmountButton]}
+                    onPress={() => totalEarned >= 2500 && setSelectedAmount(2500)}
+                    disabled={totalEarned < 2500}
+                  >
+                    <Text style={styles.amountButtonText}>2500</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <TouchableOpacity style={styles.redeemButton}>
+              <TouchableOpacity
+                style={[styles.redeemButton, !selectedAmount && styles.disabledRedeemButton]}
+                onPress={handleRedeem}
+                disabled={!selectedAmount}
+              >
                 <Text style={styles.redeemButtonText}>Redeem</Text>
               </TouchableOpacity>
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.rewardItem}>
-            <LinearGradient
-              colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.03)']}
-              style={styles.rewardGradient}
-            >
-              <View style={styles.rewardIcon}>
-                <IconSymbol name="heart.fill" size={24} color="#FF6B6B" />
-              </View>
-              <View style={styles.rewardInfo}>
-                <Text style={styles.rewardTitle}>Health Boost</Text>
-                <Text style={styles.rewardDescription}>Unlock exclusive health tips & insights</Text>
-                <Text style={styles.rewardPrice}>300 points</Text>
-              </View>
-              <TouchableOpacity style={styles.redeemButton}>
-                <Text style={styles.redeemButtonText}>Redeem</Text>
-              </TouchableOpacity>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.rewardItem}>
-            <LinearGradient
-              colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.03)']}
-              style={styles.rewardGradient}
-            >
-              <View style={styles.rewardIcon}>
-                <IconSymbol name="star.fill" size={24} color="#9C27B0" />
-              </View>
-              <View style={styles.rewardInfo}>
-                <Text style={styles.rewardTitle}>VIP Status</Text>
-                <Text style={styles.rewardDescription}>Unlock exclusive features for 1 month</Text>
-                <Text style={styles.rewardPrice}>1000 points</Text>
-              </View>
-              <TouchableOpacity style={styles.redeemButton}>
-                <Text style={styles.redeemButtonText}>Redeem</Text>
-              </TouchableOpacity>
-            </LinearGradient>
-          </TouchableOpacity>
         </View>
 
-        {/* How to Earn More Section */}
-        <View style={styles.infoContainer}>
-          <LinearGradient
-            colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
-            style={styles.infoBox}
-          >
-            <Text style={styles.infoTitle}>How to Earn More Points</Text>
-            <Text style={styles.infoText}>
-              • Complete daily challenges (+50 points){'\n'}
-              • Reach step milestones (+25-100 points){'\n'}
-              • Invite friends to the app (+10 points){'\n'}
-              • Maintain walking streaks (+10 points/day){'\n'}
-            </Text>
-          </LinearGradient>
-        </View>
-
-        <View style={styles.bottomPadding} />
       </ScrollView>
     </LinearGradient>
   );
@@ -501,5 +482,33 @@ const styles = StyleSheet.create({
   totalAmount: {
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  amountButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  amountButton: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  selectedAmountButton: {
+    backgroundColor: '#8BC34A',
+    borderColor: '#8BC34A',
+  },
+  disabledAmountButton: {
+    opacity: 0.5,
+  },
+  amountButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  disabledRedeemButton: {
+    opacity: 0.5,
   },
 });

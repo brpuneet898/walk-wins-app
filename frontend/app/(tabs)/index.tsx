@@ -1716,7 +1716,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(100,181,246,0.2)', // 👈 CHANGED: Blue background instead of green
+    backgroundColor: 'rgba(100, 181, 246, 0.2)', // 👈 CHANGED: Blue background instead of green
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,

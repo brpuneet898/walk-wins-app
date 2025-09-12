@@ -1,6 +1,6 @@
 import { getLevelInfo } from './levelSystem';
 import { auth, db } from '../firebaseConfig';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 
 // Enhanced earnings calculation with level system support
 export async function calculateTotalEarnings(
@@ -19,10 +19,10 @@ export async function calculateTotalEarnings(
   const coinMultiplier = levelInfo.coinMultiplier;
 
   const normalSteps = Math.max(validLifetime - validBoost, 0);
-  
+
   // Calculate step earnings with level multiplier
   const stepEarnings = normalSteps * coinMultiplier + validBoost * (coinMultiplier * 2);
-  
+
   // Add bonus coins (referrals, ads, etc.) - these are NOT affected by level
   const total = stepEarnings + validCoins;
 
@@ -43,7 +43,34 @@ export async function calculateTotalEarnings(
     // Fall back to original total if query fails
   }
 
-  const finalTotal = total - totalTransactions;
+  // Subtract voucher amounts (both processed and pending)
+  let totalVouchers = 0;
+  let pendingVoucherAmount = 0;
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      // Get processed vouchers from subcollection
+      const vouchersRef = collection(db, 'users', user.uid, 'vouchers');
+      const vouchersSnapshot = await getDocs(vouchersRef);
+      vouchersSnapshot.forEach((doc) => {
+        const data = doc.data();
+        totalVouchers += Number(data.amount) || 0;
+      });
+
+      // Get pending voucher request from user document
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        pendingVoucherAmount = Number(userData.voucher_amount) || 0;
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching vouchers for earnings calculation:', error);
+    // Fall back to original total if query fails
+  }
+
+  const finalTotal = total - totalTransactions - totalVouchers - pendingVoucherAmount;
   return Math.max(finalTotal, 0);
 }
 
@@ -71,7 +98,7 @@ export function calculateStepEarnings(
 
   const normalSteps = Math.max(validLifetime - validBoost, 0);
   const stepEarnings = normalSteps * coinMultiplier + validBoost * (coinMultiplier * 2);
-  
+
   return Math.max(stepEarnings, 0);
 }
 
