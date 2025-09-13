@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Modal, ActivityIndicator, Image, TextInput, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, TextInput, ScrollView, Image, ActivityIndicator } from 'react-native';
 import { useSteps } from '../../context/StepContext';
 import Animated, {
   useSharedValue,
@@ -13,13 +13,8 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import { calculateTotalEarnings, calculateStepEarnings, calculateBonusEarnings } from '../../utils/earnings';
 // Level system imports
 import { useLevelSystem } from '../../context/LevelContext';
-// @ts-ignore - firebaseConfig is a JS module without types
 import { auth, db } from '../../firebaseConfig';
 import { doc, updateDoc, increment, getDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
-// WebView for in-app ad playback
-// Note: install with `expo install react-native-webview` if missing
-// @ts-ignore
-import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // --- START: GradientText Component ---
@@ -87,17 +82,10 @@ export default function CoinScreen() {
   const { coins = 0, lifetimeSteps = 0, boostSteps = 0, setCoins } = useSteps() as any;
   const { currentLevel } = useLevelSystem();
   const insets = useSafeAreaInsets();
-  const [isWatching, setIsWatching] = useState(false);
-  const [showAdModal, setShowAdModal] = useState(false);
-  const [adLoading, setAdLoading] = useState(true);
   const [showWithdrawForm, setShowWithdrawForm] = useState(false);
   const [paymentDetails, setPaymentDetails] = useState('');
   const [selectedAmount, setSelectedAmount] = useState(100);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // New state for daily ad reward system
-  const [adsWatchedToday, setAdsWatchedToday] = useState(0);
-  const [dailyRewardClaimed, setDailyRewardClaimed] = useState(false);
   
   // Transaction history state
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -132,38 +120,6 @@ export default function CoinScreen() {
     }
   };
   
-  // Load daily ad counter data on component mount
-  useEffect(() => {
-    const loadDailyAdData = async () => {
-      try {
-        // @ts-ignore
-        const currentAuth: any = auth;
-        const user = currentAuth.currentUser;
-        if (user) {
-          const userDocRef = doc(db, 'users', user.uid);
-          const userSnap = await getDoc(userDocRef);
-          const userData = userSnap.data();
-          
-          if (userData) {
-            // Check if we need to reset for new day
-            await checkAndResetDailyCounters(userDocRef, userData);
-            
-            // Get updated data after potential reset
-            const updatedSnap = await getDoc(userDocRef);
-            const updatedData = updatedSnap.data();
-            
-            setAdsWatchedToday(updatedData?.adsWatchedToday || 0);
-            setDailyRewardClaimed(updatedData?.dailyRewardClaimed || false);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading daily ad data:', error);
-      }
-    };
-
-    loadDailyAdData();
-  }, []);
-
   // Load transaction history
   useEffect(() => {
     const loadTransactionHistory = async () => {
@@ -200,31 +156,6 @@ export default function CoinScreen() {
     loadTransactionHistory();
   }, []);
 
-  // Utility function to get current date in YYYY-MM-DD format
-  const getCurrentDateString = () => {
-    return new Date().toISOString().split('T')[0];
-  };
-
-  // Function to check and reset daily counters if needed
-  const checkAndResetDailyCounters = async (userDocRef: any, userData: any) => {
-    const currentDate = getCurrentDateString();
-    const lastAdWatchDate = userData?.lastAdWatchDate;
-
-    // If it's a new day, reset the counters
-    if (lastAdWatchDate !== currentDate) {
-      console.log('[DAILY RESET] New day detected, resetting daily counters');
-      await updateDoc(userDocRef, {
-        adsWatchedToday: 0,
-        dailyRewardClaimed: false,
-        lastAdWatchDate: currentDate,
-      });
-      setAdsWatchedToday(0);
-      setDailyRewardClaimed(false);
-      return true; // Reset occurred
-    }
-    return false; // No reset needed
-  };
-  
   // Calculate earnings with level system
   const [totalEarned, setTotalEarned] = useState(0);
   const [earningsLoading, setEarningsLoading] = useState(true);
@@ -245,89 +176,6 @@ export default function CoinScreen() {
 
     loadEarnings();
   }, [lifetimeSteps, coins, boostSteps, currentLevel]);
-  
-  // Put your YouTube link (shorts or regular) here. Examples:
-  // 'https://www.youtube.com/shorts/VIDEOID', 'https://youtu.be/VIDEOID', or full watch URL
-  const YT_LINK = 'https://www.youtube.com/shorts/ie_l0AJe13o';
-
-  function extractYouTubeID(url: string) {
-    // Matches youtu.be/ID, /watch?v=ID, /shorts/ID, /embed/ID or raw 11-char ID
-    const m = url.match(/(?:youtu\.be\/|v=|\/shorts\/|\/embed\/)?([0-9A-Za-z_-]{11})/);
-    return m ? m[1] : url;
-  }
-
-  const YT_VIDEO_ID = extractYouTubeID(YT_LINK);
-
-  // Open ad modal and start watching
-  const handleWatchAd = () => {
-    if (isWatching) return;
-    setIsWatching(true);
-    setAdLoading(true);
-    setShowAdModal(true);
-  };
-
-  // Called when WebView posts message that the ad ended
-  const onAdMessage = async (event: any) => {
-    const data = event.nativeEvent?.data;
-    if (data === 'ended') {
-      try {
-        // @ts-ignore
-        const currentAuth: any = auth;
-        const user = currentAuth.currentUser;
-        if (user) {
-          const userDocRef = doc(db, 'users', user.uid);
-          
-          // Get current user data to check daily counters
-          const userSnap = await getDoc(userDocRef);
-          const userData = userSnap.data();
-          
-          // Check and reset daily counters if it's a new day
-          await checkAndResetDailyCounters(userDocRef, userData);
-          
-          // Get updated data after potential reset
-          const updatedSnap = await getDoc(userDocRef);
-          const updatedData = updatedSnap.data();
-          
-          const currentAdsWatchedToday = updatedData?.adsWatchedToday || 0;
-          const currentDailyRewardClaimed = updatedData?.dailyRewardClaimed || false;
-          
-          // Prepare the update object
-          const updates: any = {
-            adsWatchedToday: increment(1),
-            lastAdWatchDate: getCurrentDateString(),
-          };
-          
-          // Check if user should get the daily reward (15+ ads and not claimed yet)
-          const newAdsWatchedToday = currentAdsWatchedToday + 1;
-          if (newAdsWatchedToday >= 15 && !currentDailyRewardClaimed) {
-            updates.coins = increment(1);
-            updates.dailyRewardClaimed = true;
-            console.log('[DAILY REWARD] User reached 15 ads, awarding +1 coin');
-          }
-          
-          // Update the database
-          await updateDoc(userDocRef, updates);
-          
-          // Update local state
-          setAdsWatchedToday(newAdsWatchedToday);
-          if (newAdsWatchedToday >= 15 && !currentDailyRewardClaimed) {
-            setDailyRewardClaimed(true);
-            // Update coins in local state
-            if (typeof setCoins === 'function') {
-              setCoins((prev: number) => (Number(prev) || 0) + 1);
-            }
-          }
-          
-          console.log(`[AD WATCH] Ad completed. Today: ${newAdsWatchedToday}/15 ads`);
-        }
-      } catch (err) {
-        console.error('Failed to process ad watch:', err);
-      } finally {
-        setIsWatching(false);
-        setShowAdModal(false);
-      }
-    }
-  };
 
   // Handle withdrawal form submission
   const handleWithdrawSubmit = async () => {
@@ -364,44 +212,6 @@ export default function CoinScreen() {
       setIsSubmitting(false);
     }
   };
-
-  // Small HTML wrapper using YouTube IFrame API that posts 'ended' when video finishes
-  const injectedHTML = `
-    <!doctype html>
-    <html>
-      <head>
-        <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0">
-        <style>html,body,#player{height:100%;margin:0;background:black}</style>
-      </head>
-      <body>
-        <div id="player"></div>
-        <script>
-          var tag = document.createElement('script');
-          tag.src = "https://www.youtube.com/iframe_api";
-          var firstScriptTag = document.getElementsByTagName('script')[0];
-          firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-          var player;
-          function onYouTubeIframeAPIReady() {
-            player = new YT.Player('player', {
-              height: '100%',
-              width: '100%',
-              videoId: '${YT_VIDEO_ID}',
-              playerVars: { 'playsinline': 1, 'controls': 0, 'rel': 0, 'modestbranding': 1, 'autoplay': 1, 'start': 0, 'end': 5 },
-              events: {
-                'onStateChange': onPlayerStateChange
-              }
-            });
-            try { player.playVideo && player.playVideo(); } catch(e) { }
-          }
-          function onPlayerStateChange(event) {
-            if (event.data == YT.PlayerState.ENDED) {
-              window.ReactNativeWebView.postMessage('ended');
-            }
-          }
-        </script>
-      </body>
-    </html>
-  `;
 
   return (
     <View style={styles.container}>
@@ -445,24 +255,6 @@ export default function CoinScreen() {
           </GradientText>
         </View>
         <Text style={styles.lifetimeStepsText}>Based on {lifetimeSteps} lifetime steps</Text>
-      </View>
-
-      {/* Watch Ad Section */}
-      <View style={styles.adBox}>
-        <Text style={styles.adTitle}>Daily Ad Challenge</Text>
-        <Text style={styles.adSubtitle}>
-          Watch 15 ads today to earn 1 coin • {adsWatchedToday}/15 completed
-        </Text>
-        <Pressable onPress={handleWatchAd} disabled={isWatching}>
-          <LinearGradient
-            colors={isWatching ? ['#94D3A2', '#7CC47F'] : ['#8BC34A', '#4CAF50']}
-            style={styles.watchButton}
-          >
-            <Text style={styles.watchButtonText}>
-              {isWatching ? 'Watching...' : dailyRewardClaimed ? 'Keep Watching' : 'Watch Ad'}
-            </Text>
-          </LinearGradient>
-        </Pressable>
       </View>
 
       {/* Withdrawal Section */}
@@ -605,40 +397,6 @@ export default function CoinScreen() {
 
       </ScrollView>
 
-      {/* Ad modal with WebView */}
-      <Modal
-        visible={showAdModal}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => {
-          // Prevent closing while ad is playing
-          if (!isWatching) setShowAdModal(false);
-        }}
-      >
-        <View style={styles.modalContainer}>
-          {adLoading && (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#fff" />
-              <Text style={{ color: '#fff', marginTop: 8 }}>Loading ad...</Text>
-            </View>
-          )}
-          {/* @ts-ignore */}
-          <WebView
-            originWhitelist={["*"]}
-            source={{ html: injectedHTML }}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            onMessage={onAdMessage}
-            onLoadEnd={() => setAdLoading(false)}
-            style={styles.webview}
-            // Allow autoplay controls
-            allowsInlineMediaPlayback={true}
-            mediaPlaybackRequiresUserAction={false}
-            startInLoadingState={true}
-            allowsFullscreenVideo={true}
-          />
-        </View>
-      </Modal>
     </LinearGradient>
     </View>
   );
@@ -719,68 +477,6 @@ const styles = StyleSheet.create({
   lifetimeStepsText: {
     fontSize: 12,
     color: '#6B7280',
-  },
-  adBox: {
-    marginHorizontal: 15,
-    marginBottom: 30,
-    padding: 20, // Increased padding for better visual balance
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  adTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  adSubtitle: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 6,
-  },
-  adRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-    alignItems: 'center',
-  },
-  adCount: {
-    fontSize: 13,
-    color: '#BBBBBB',
-  },
-  adReward: {
-    fontSize: 13,
-    color: '#8BC34A',
-    fontWeight: '700',
-  },
-  watchButton: {
-    marginTop: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  watchButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2,
-  },
-  webview: {
-    flex: 1,
-    backgroundColor: '#000',
   },
   withdrawBox: {
     marginHorizontal: 15,
