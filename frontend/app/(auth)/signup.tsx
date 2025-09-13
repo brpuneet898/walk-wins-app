@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, ScrollView, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, ScrollView, TouchableWithoutFeedback, Keyboard, KeyboardAvoidingView, Platform, Image, Modal } from 'react-native';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, collection, query, where, getDocs, updateDoc, increment } from 'firebase/firestore';
 // @ts-ignore - firebaseConfig is a JS file without types
@@ -167,6 +167,10 @@ export default function SignUp() {
   const [occupation, setOccupation] = useState('');
   const [preferredTime, setPreferredTime] = useState('');
 
+  // Terms and Conditions modal state
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isTermsAccepted, setIsTermsAccepted] = useState(false);
+
   // Step management
   const [currentStep, setCurrentStep] = useState(1);
 
@@ -202,6 +206,13 @@ export default function SignUp() {
       Alert.alert('Missing Fields', 'Please fill in all details from both steps to create your account.');
       return;
     }
+    // Open Terms and Conditions modal instead of signing up directly
+    setIsModalVisible(true);
+  };
+
+  const handleAgree = async () => {
+    if (!isTermsAccepted) return; // Should not happen, but safety check
+
     try {
       // @ts-ignore - auth is imported from a JS config file
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -254,6 +265,14 @@ export default function SignUp() {
         totalReferrals: 0, // How many people this user has referred
         createdAt: new Date(),
       });
+
+      // Close modal and reset states
+      setIsModalVisible(false);
+      setIsTermsAccepted(false);
+      
+      // Navigate to next screen or show success
+      Alert.alert('Success', 'Account created successfully!');
+      // You can add navigation here, e.g., router.replace('/home');
       
     } catch (error: any) {
       Alert.alert('Sign Up Failed', error.message);
@@ -545,6 +564,154 @@ export default function SignUp() {
                   </Pressable>
                 </View>
               </View>
+
+              {/* Terms and Conditions Modal */}
+              <Modal
+                visible={isModalVisible}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setIsModalVisible(false)}
+              >
+                <View style={styles.modalOverlay}>
+                  <View style={styles.modalContent}>
+                    <Text style={styles.modalTitle}>Terms and Conditions</Text>
+                    <ScrollView style={styles.termsScrollView}>
+                      <Text style={styles.termsText}>
+                        Welcome to WalkWins! These Terms and Conditions (<Text style={{ fontWeight: 'bold', fontSize: 14 }}>Terms</Text>) govern your use of the WalkWins
+                        mobile application (the <Text style={{ fontWeight: 'bold', fontSize: 14 }}>App</Text>) and the services provided through it. This App is owned and
+                        operated by us.{'\n'}
+                        By checking the box next to "I agree to the Terms and Conditions and Privacy Policy", and by
+                        creating an account or using the App, you agree to be bound by these Terms. If you do not
+                        agree to these Terms, you must not use the App.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>1. The WalkWins Service{'\n'}</Text>
+                        WalkWins is a fitness application that encourages physical activity by rewarding users. Our
+                        services include:{'\n'}
+                        ● Pedometer Functionality: Tracking your daily steps and distance covered.{'\n'}
+                        ● Health Metrics: Estimating calories burned based on your activity.{'\n'}
+                        ● Map & Trails: Allowing you to create and track your own walking or running trails.{'\n'}
+                        ● Leaderboards: Providing a competitive platform to compare your progress with other
+                        users.{'\n'}
+                        ● Reward System: A system where users can earn "WalkWin Coins" for their physical
+                        activity and engagement.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>2. Eligibility and Account Registration{'\n'}</Text>
+                        ● Account Creation: You are required to register for an account to access the full features
+                        of the App. You agree to provide accurate, current, and complete information during the
+                        registration process.{'\n'}
+                        ● Account Security: You are responsible for safeguarding your account password and for
+                        any activities or actions under your account. You agree to notify us immediately of any
+                        unauthorized use of your account.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>3. Earning WalkWin Coins{'\n'}</Text>
+                        WalkWin Coins are a form of in-app virtual currency that can be earned through various
+                        activities:{'\n'}
+                          ● Walking: You will earn 1 (one) WalkWin Coin for every 500 (five hundred) steps you
+                          take, as tracked by the App.{'\n'}
+                          ● Challenges & Games: You can earn additional coins by participating in and successfully
+                          completing in-app challenges and games.{'\n'}
+                          ● Advertisements: You may have the option to watch advertisements to earn more coins.{'\n'}
+                        The conversion rate is 1 WalkWin Coin = ₹1 (one Indian Rupee). We reserve the right, at our
+                        sole discretion, to change the earning rates, conversion rates, and methods of earning coins at
+                        any time without prior notice.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>4. Payouts and Redemptions{'\n'}</Text>
+                        You can redeem your accumulated WalkWin Coins through the following methods, subject to
+                        certain levels and conditions outlined within the App:{'\n'}
+                          ● Cash Withdrawal: You may withdraw your earnings to a valid UPI ID or an Indian bank
+                          account. All cash withdrawals are subject to a 30% deduction for processing fees,
+                          platform maintenance, and other administrative charges. For example, if you withdraw
+                          1000 WalkWin Coins (₹1000), you will receive ₹700.{'\n'}
+                          ● Gift Cards: You may redeem your coins for gift cards from our available partners (e.g.,
+                          Amazon, Flipkart, Meesho), subject to the terms and conditions of the respective partner.{'\n'}
+                        All redemptions and withdrawals are final and cannot be reversed. We are not responsible for
+                        any loss of funds due to incorrect UPI ID or bank account information provided by you.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>5. User Conduct and Prohibited Activities{'\n'}</Text>
+                        You agree not to engage in any of the following prohibited activities:{'\n'}
+                          ● Creating multiple accounts for a single individual.{'\n'}
+                          ● Using any automated means, such as bots, scripts, or spiders, to accumulate steps or
+                          coins.{'\n'}
+                          ● Using GPS spoofing, emulators, or any other methods to falsify your location or step data.{'\n'}
+                          ● Attempting to interfere with, compromise the system integrity or security of, or decipher
+                          any transmissions to or from the servers running the Service.{'\n'}
+                          ● Engaging in any activity that is fraudulent, illegal, or harmful to WalkWins or its users.{'\n'}
+                        Violation of these rules may result in the immediate suspension or termination of your account,
+                        forfeiture of all earned WalkWin Coins, and a permanent ban from using our Services.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>6. Health and Fitness Disclaimer{'\n'}</Text>
+                        ● WalkWins is not a medical device or a substitute for professional medical advice. The step
+                        count, calorie burn, and other data are estimations and should not be used for medical
+                        purposes.{'\n'}
+                        ● You are responsible for your own health and safety. Consult with a physician or other
+                        qualified health provider before starting any new fitness regimen. By using the App, you
+                        agree that you are doing so at your own risk.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>7. Data Privacy{'\n'}</Text>
+                        Your privacy is important to us. Our Privacy Policy, which is incorporated into these Terms by
+                        reference, explains how we collect, use, and share your personal information. By using the App,
+                        you consent to the data practices described in our Privacy Policy.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>8. Intellectual Property{'\n'}</Text>
+                        All content, trademarks, logos, and software associated with the WalkWins App are the
+                        exclusive property of WalkWins and its licensors. You may not copy, modify, distribute, sell, or
+                        lease any part of our Services or included software.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>9. Termination{'\n'}</Text>
+                        ● By You: You can terminate your account at any time by following the instructions within
+                        the App.{'\n'}
+                        ● By Us: We may suspend or terminate your account at our sole discretion, without notice,
+                        for any reason, including but not limited to a breach of these Terms. Upon termination,
+                        your right to use the Service and any accumulated WalkWin Coins will be immediately
+                        forfeited.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>10. Limitation of Liability{'\n'}</Text>
+                        To the maximum extent permitted by applicable law, in no event shall WalkWins, its affiliates,
+                        directors, or employees be liable for any indirect, punitive, incidental, special, consequential, or
+                        exemplary damages, including without limitation damages for loss of profits, goodwill, data, or
+                        other intangible losses, arising out of or relating to the use of, or inability to use, this service.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>11. Change of Terms{'\n'}</Text>
+                        We reserve the right to modify these Terms at any time. If we make changes, we will provide
+                        you with notice, such as by sending an email, providing a notification through the App, or
+                        updating the "Last Updated" date at the top of these Terms. Your continued use of the App will
+                        confirm your acceptance of the revised Terms.{'\n\n'}
+
+                        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>12. Contact Us{'\n'}</Text>
+                        If you have any questions about these Terms, please contact us at: Walkwinsind@gmail.com{'\n\n'}
+                        Last Updated: 13 September 2025
+                      </Text>
+                    </ScrollView>
+                    <View style={styles.checkboxContainer}>
+                      <Pressable
+                        style={[styles.checkbox, isTermsAccepted && styles.checkboxChecked]}
+                        onPress={() => setIsTermsAccepted(!isTermsAccepted)}
+                      >
+                        {isTermsAccepted && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+                      </Pressable>
+                      <Text style={styles.checkboxText}>I agree to the Terms and Conditions and Privacy Policy</Text>
+                    </View>
+                    <View style={styles.modalButtons}>
+                      <Pressable
+                        style={[styles.modalButton, styles.cancelButton]}
+                        onPress={() => {
+                          setIsModalVisible(false);
+                          setIsTermsAccepted(false);
+                        }}
+                      >
+                        <Text style={styles.cancelButtonText}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.modalButton, styles.agreeButton, !isTermsAccepted && styles.agreeButtonDisabled]}
+                        onPress={handleAgree}
+                        disabled={!isTermsAccepted}
+                      >
+                        <Text style={styles.agreeButtonText}>I Agree</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              </Modal>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -869,5 +1036,92 @@ const styles = StyleSheet.create({
   dropdownOptionText: {
     color: '#FFFFFF',
     fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#1F2937',
+    borderRadius: 16,
+    padding: 20,
+    width: '90%',
+    maxHeight: '80%',
+    borderWidth: 1,
+    borderColor: 'rgba(55, 65, 81, 0.7)',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  termsScrollView: {
+    maxHeight: 300,
+    marginBottom: 20,
+  },
+  termsText: {
+    color: '#D1D5DB',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: '#8BC34A',
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+    backgroundColor: 'transparent',
+  },
+  checkboxChecked: {
+    backgroundColor: '#8BC34A',
+  },
+  checkboxText: {
+    color: '#D1D5DB',
+    fontSize: 14,
+    flex: 1,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginHorizontal: 5,
+  },
+  cancelButton: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  cancelButtonText: {
+    color: '#D1D5DB',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  agreeButton: {
+    backgroundColor: '#8BC34A',
+  },
+  agreeButtonDisabled: {
+    backgroundColor: 'rgba(139, 195, 74, 0.5)',
+  },
+  agreeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
