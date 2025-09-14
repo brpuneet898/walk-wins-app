@@ -11,6 +11,7 @@ import { doc, getDoc, setDoc, updateDoc, increment, deleteField, runTransaction 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // @ts-ignore
 import { WebView } from 'react-native-webview';
+import { calculateTotalEarnings } from '../../utils/earnings';
 
 const getLocalDateString = (date = new Date()) => {
   const year = date.getFullYear();
@@ -36,8 +37,9 @@ export default function SocialScreen() {
   const [challengeStartSteps, setChallengeStartSteps] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [hasClaimedReward, setHasClaimedReward] = useState(false);
-  const { isLoggingOut, coins = 0, setCoins, dailyRecords } = useSteps();
   const insets = useSafeAreaInsets();
+  const [totalEarned, setTotalEarned] = useState(0);
+  const { isLoggingOut, coins = 0, setCoins, dailyRecords, lifetimeSteps, boostSteps, userLevel } = useSteps();
 
   // Ad-related state
   const [isWatching, setIsWatching] = useState(false);
@@ -73,19 +75,9 @@ export default function SocialScreen() {
       const userRef = doc(db, 'users', userId);
 
       // Use a transaction to ensure the user has >=2 coins before deducting and writing the challenge
-      await runTransaction(db, async (tx) => {
-        const userSnap = await tx.get(userRef);
-        const userData = userSnap.exists() ? userSnap.data() : {};
-        const currentCoins = Number(userData.coins || 0);
-        if (currentCoins < 2) {
-          throw new Error('Insufficient coins');
-        }
-
-        // update coins and set today's challenge atomically
-        tx.update(userRef, {
-          coins: currentCoins - 2,
-          [`dailyChallenge_${today}`]: challengeObj,
-        });
+      await updateDoc(userRef, {
+        coins: increment(-2), // Decrements by 2, even if it goes into negative
+        [`dailyChallenge_${today}`]: challengeObj,
       });
 
       // Update local UI coins after successful transaction
@@ -229,6 +221,16 @@ export default function SocialScreen() {
       awardChallengeCoins();
     }
   }, [isCompleted, hasJoinedChallenge, hasClaimedReward]);
+
+  useEffect(() => {
+    const fetchEarnings = async () => {
+      if (auth.currentUser) {
+        const earnings = await calculateTotalEarnings(lifetimeSteps, coins, boostSteps, userLevel);
+        setTotalEarned(earnings);
+      }
+    };
+    fetchEarnings();
+  }, [lifetimeSteps, coins, boostSteps, userLevel]);
 
   // Utility function to get current date in YYYY-MM-DD format
   const getCurrentDateString = () => {
@@ -470,10 +472,10 @@ export default function SocialScreen() {
                   <Pressable 
                     style={styles.joinButton} 
                     onPress={joinChallenge}
-                    disabled={isLoading || (Number(coins) || 0) < 2}
+                    disabled={isLoading || Number(totalEarned) < 2}
                   >
                     <LinearGradient
-                      colors={['#8BC34A', '#689F38']}
+                      colors={(isLoading || totalEarned < 2) ? ['#888888', '#666666'] : ['#8BC34A', '#689F38']}
                       style={styles.joinButtonGradient}
                     >
                       <FontAwesome name="play" size={16} color="#fff" />
