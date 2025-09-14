@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, AppState, ScrollView, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, AppState, ScrollView, Image, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { Pedometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // @ts-ignore - firebaseConfig is a JS module without TS types
@@ -191,7 +191,13 @@ export default function HomeScreen() {
 
   // Safe area insets
   const insets = useSafeAreaInsets();
-
+  useEffect(() => {
+    Alert.alert(
+      "Important ‼️", // This is the title of the alert
+      "For continue counting steps please don't remove or close the app from background.", // This is the message
+      [{ text: "OK" }] // This creates the button
+    );
+  }, []); // The empty array ensures this runs only once when the screen opens
   useEffect(() => {
     // If todaysSteps went from 0 to > 0 and weeklyData is empty, fetch data
     if (prevTodaysStepsRef.current === 0 && todaysSteps > 0 && weeklyData.length === 0) {
