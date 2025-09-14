@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
+    "@kingstinct/react-native-healthkit": "^10.1.0",
     "@react-native-async-storage/async-storage": "2.1.2",
     "@react-native-community/slider": "^5.0.1",
     "@react-native-firebase/app": "^23.2.1",
@@ -51,6 +52,7 @@
     "react-native": "0.79.5",
     "react-native-animatable": "^1.4.0",
     "react-native-gesture-handler": "~2.24.0",
+    "react-native-google-fit": "^0.21.0",
     "react-native-maps": "^1.20.1",
     "react-native-razorpay": "^2.3.0",
     "react-native-reanimated": "~3.17.4",
