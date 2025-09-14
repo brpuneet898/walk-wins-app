@@ -8,9 +8,11 @@ import { HapticTab } from '@/components/HapticTab';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { StepProvider, useSteps } from '../../context/StepContext';
+import { LeaderboardProvider, useLeaderboard } from '../../context/LeaderboardContext';
 import { auth, db } from '../../firebaseConfig';
 import { doc, getDoc, collection, getDocs, query, orderBy, collectionGroup, limit } from 'firebase/firestore';
 import MusicBar from '../../components/MusicBar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const getLocalDateString = (date = new Date()) => {
   const year = date.getFullYear();
@@ -20,22 +22,30 @@ const getLocalDateString = (date = new Date()) => {
 };
 
 const AppDataController = ({ children }: { children: ReactNode }) => {
-  const { setLifetimeSteps, setDailyRecords, setLeaderboardData } = useSteps();
+  const { setLifetimeSteps, setDailyRecords } = useSteps();
+  const { setLeaderboardData } = useLeaderboard();
 
   useEffect(() => {
     let cancelled = false;
+    let isInitialLoad = true;
 
     const fetchData = async () => {
       try {
         const currentUser = auth.currentUser;
-        if (!currentUser) return;
-        console.log('[Data Controller] Fetching latest data...');
+        if (!currentUser) {
+          console.log('[Data Controller] No user available, skipping fetch');
+          return;
+        }
+
+        console.log(`[Data Controller] ${isInitialLoad ? 'Initial' : 'Periodic'} data fetch starting...`);
 
         // User doc (lifetime total)
         const userDocRef = doc(db, 'users', currentUser.uid);
         const userDoc = await getDoc(userDocRef);
         if (!cancelled && userDoc.exists()) {
-          setLifetimeSteps(userDoc.data().lifetimeTotalSteps || 0);
+          const newLifetimeSteps = userDoc.data().lifetimeTotalSteps || 0;
+          setLifetimeSteps(newLifetimeSteps);
+          console.log(`[Data Controller] Updated lifetime steps: ${newLifetimeSteps}`);
         }
 
         // Personal daily history
@@ -46,13 +56,13 @@ const AppDataController = ({ children }: { children: ReactNode }) => {
           const records = personalHistorySnapshot.docs.map(d => ({
             id: d.id,
             steps: d.data().steps || 0,
-            // include any timestamp stored on the document (optional)
             time: d.data().updatedAt || d.data().timestamp || null,
           }));
           setDailyRecords(records);
+          console.log(`[Data Controller] Updated daily records: ${records.length} entries`);
         }
 
-        // Global leaderboard for today
+        // Global leaderboard for today - ONLY fetch if we don't have data or it's initial load
         const todayString = getLocalDateString();
         const leaderboardQuery = query(
           collectionGroup(db, 'dailySteps'),
@@ -61,48 +71,61 @@ const AppDataController = ({ children }: { children: ReactNode }) => {
         );
         const leaderboardSnapshot = await getDocs(leaderboardQuery);
 
-        // Filter to entries whose doc id equals today's date (depends on how you store daily docs)
+        // Filter to entries whose doc id equals today's date
         const todaysEntries = leaderboardSnapshot.docs.filter(d => d.id === todayString);
 
         const leaderboardPromises = todaysEntries.map(async (dailyDoc, index) => {
-          const userRef = dailyDoc.ref.parent.parent; // parent is dailySteps collection, its parent is user doc
+          const userRef = dailyDoc.ref.parent.parent;
           let username = 'Unknown';
           let userId = '';
           if (userRef) {
             const userSnap = await getDoc(userRef);
             if (userSnap.exists()) {
               username = userSnap.data().username || 'Unknown';
-              userId = userSnap.id; // Get the user ID
+              userId = userSnap.id;
             }
           }
           return {
             rank: index + 1,
             username,
             steps: dailyDoc.data().steps || 0,
-            userId, // Include userId in the leaderboard entry
-            date: dailyDoc.id, // typically the date string
+            userId,
+            date: dailyDoc.id,
             time: dailyDoc.data().updatedAt || dailyDoc.data().timestamp || null,
           };
         });
 
         const leaderboard = await Promise.all(leaderboardPromises);
-        if (!cancelled) setLeaderboardData(leaderboard);
+        if (!cancelled) {
+          setLeaderboardData(leaderboard);
+          console.log(`[Data Controller] Updated leaderboard: ${leaderboard.length} entries`);
+        }
 
         console.log('[Data Controller] Data fetch complete.');
+        isInitialLoad = false;
       } catch (error: any) {
         if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
-          console.log('[Data Controller] App is offline - using cached data');
+          console.log('[Data Controller] App is offline - keeping existing data');
         } else {
           console.error('[Data Controller] Error fetching data:', error);
         }
       }
     };
 
+    // Initial fetch
     fetchData();
-    const hourlyFetchInterval = setInterval(fetchData, 3600000);
+
+    // Periodic fetch every hour, but only if component is still mounted
+    const hourlyFetchInterval = setInterval(() => {
+      if (!cancelled) {
+        fetchData();
+      }
+    }, 3600000);
+
     return () => {
       cancelled = true;
       clearInterval(hourlyFetchInterval);
+      console.log('[Data Controller] Component unmounting, cancelled = true');
     };
   }, [setLifetimeSteps, setDailyRecords, setLeaderboardData]);
 
@@ -128,12 +151,15 @@ const TabBarBackground = () => (
 );
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  
   return (
     <StepProvider>
-      <AppDataController>
-        {/* Music Bar - appears on top of all tabs */}
-        <MusicBar />
-        <Tabs
+      <LeaderboardProvider>
+        <AppDataController>
+          {/* Music Bar - appears on top of all tabs */}
+          <MusicBar />
+          <Tabs
           screenOptions={{
             tabBarActiveTintColor: '#8BC34A', // Green for active
             tabBarInactiveTintColor: '#94A3B8', // Lighter gray for inactive
@@ -142,10 +168,10 @@ export default function TabLayout() {
             tabBarBackground: () => <TabBarBackground />,
             tabBarStyle: {
               position: 'absolute',
-              bottom: 0,
+              bottom: insets.bottom, // Use safe area inset instead of 0
               left: 0,
               right: 0,
-              height: 90, // Increased height
+              height: 60 + insets.bottom, // Add bottom inset to height
               borderTopLeftRadius: 30, // More rounded
               borderTopRightRadius: 30,
               backgroundColor: 'transparent',
@@ -154,8 +180,8 @@ export default function TabLayout() {
               shadowOffset: { width: 0, height: -10 },
               shadowOpacity: 0.25,
               shadowRadius: 25,
-              elevation: 20,
-              paddingBottom: Platform.OS === 'ios' ? 30 : 15,
+              elevation: 40,
+              paddingBottom: Platform.OS === 'ios' ? 30 + insets.bottom : 0 + insets.bottom, // Add insets to padding
               paddingTop: 15,
               paddingHorizontal: 10,
             },
@@ -195,9 +221,9 @@ export default function TabLayout() {
             }} 
           />
           <Tabs.Screen 
-            name="social" 
+            name="earn" 
             options={{ 
-              title: 'Social', 
+              title: 'Earn', 
               tabBarIcon: ({ color, focused }) => (
                 <View style={[styles.iconContainer, focused && styles.activeIconContainer]}>
                   <IconSymbol size={26} name="person.2.fill" color={color} />
@@ -238,6 +264,7 @@ export default function TabLayout() {
           />
         </Tabs>
       </AppDataController>
+      </LeaderboardProvider>
     </StepProvider>
   );
 }
@@ -247,6 +274,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
+    bottom: -10,
     overflow: 'hidden',
   },
   tabBarGradient: {

@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   Dimensions,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -127,7 +128,10 @@ export default function LevelInfoModal({
           </View>
 
           <View style={styles.statItem}>
-            <Ionicons name="cash" size={16} color="#FFD700" />
+            <Image
+              source={require('../assets/images/icon.png')}
+              style={styles.coinIcon}
+            />
             <Text style={styles.statLabel}>Coin Rate</Text>
             <Text style={styles.statValue}>
               {formatCoins(levelInfo.coinMultiplier)} per step
@@ -166,7 +170,7 @@ export default function LevelInfoModal({
 
         <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
           <Text style={styles.sectionTitle}>
-            🎮 Your Walking Journey Levels
+            🏃🏻‍♂️ Your Walking Journey Levels
           </Text>
           <Text style={styles.sectionDescription}>
             Progress through levels by accumulating lifetime steps. Higher levels earn more coins per step!
@@ -311,5 +315,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     fontWeight: '500',
+  },
+  coinIcon: {
+    width: 16,
+    height: 16,
+    tintColor: '#FFD700',
   },
 });

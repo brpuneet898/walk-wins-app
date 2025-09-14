@@ -12,6 +12,16 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
+    // Users can read and write their own transactions
+    match /users/{userId}/transactions/{document} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Users can read and write their own vouchers
+    match /users/{userId}/vouchers/{document} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
     // Allow authenticated users to read all daily steps for leaderboard
     // but only write their own
     match /{path=**}/dailySteps/{document} {
@@ -22,6 +32,11 @@ service cloud.firestore {
     
     // Allow authenticated users to read other users' basic info for leaderboard
     match /users/{userId} {
+      allow read: if request.auth != null;
+    }
+    
+    // Allow authenticated users to read songs (public mood-based music data)
+    match /songs/{document} {
       allow read: if request.auth != null;
     }
   }

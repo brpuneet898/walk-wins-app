@@ -69,7 +69,22 @@ export function LevelProvider({ children }: LevelProviderProps) {
         setTimeout(() => {
           checkForOfflineLevelUp();
         }, 1000);
+      } else {
+        // User document doesn't exist (possibly deleted), reset to defaults
+        setLifetimeSteps(0);
+        setCurrentLevel(0);
+        setPendingLevelUp(null);
+        setShowLevelUpModal(false);
+        setShowEnhancedLevelUpModal(false);
       }
+    }, (error) => {
+      // Handle errors silently (e.g., when user document is deleted)
+      console.log('Level context listener error (possibly deleted):', error.message);
+      setLifetimeSteps(0);
+      setCurrentLevel(0);
+      setPendingLevelUp(null);
+      setShowLevelUpModal(false);
+      setShowEnhancedLevelUpModal(false);
     });
 
     return () => unsubscribe();

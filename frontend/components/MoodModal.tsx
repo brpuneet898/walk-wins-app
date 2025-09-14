@@ -86,8 +86,8 @@ const MoodModal: React.FC<MoodModalProps> = ({ visible, onClose, availableMoods 
                   disabled={isLoading}
                 >
                   <Text style={styles.moodEmoji}>{getMoodEmoji(mood)}</Text>
-                  <Text style={styles.moodText}>{mood}</Text>
-                  <Text style={styles.moodDescription}>{getMoodDescription(mood)}</Text>
+                  <Text style={styles.moodText} numberOfLines={2}>{mood}</Text>
+                  <Text style={styles.moodDescription} numberOfLines={2} adjustsFontSizeToFit={true}>{getMoodDescription(mood)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -174,24 +174,24 @@ const styles = StyleSheet.create({
   moodButton: {
     backgroundColor: 'rgba(139, 195, 74, 0.1)',
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'rgba(139, 195, 74, 0.3)',
     flexDirection: 'row',
-    gap: 16,
+    gap: 12,
   },
   moodEmoji: {
     fontSize: 32,
   },
   moodText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: '#FFFFFF',
     flex: 1,
   },
   moodDescription: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#8BC34A',
     fontStyle: 'italic',
   },

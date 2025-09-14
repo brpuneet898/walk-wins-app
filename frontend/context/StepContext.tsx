@@ -1,12 +1,13 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 // @ts-ignore - firebaseConfig is JS without TS types
 import { auth, db } from '../firebaseConfig';
-import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot, collection } from 'firebase/firestore';
 
 // A type for a single daily record
 export interface DailyRecord {
   id: string;
   steps: number;
+  time?: string | null;
 }
 
 // A type for a single leaderboard entry
@@ -23,8 +24,6 @@ interface StepContextType {
   setLifetimeSteps: React.Dispatch<React.SetStateAction<number>>;
   dailyRecords: DailyRecord[];
   setDailyRecords: React.Dispatch<React.SetStateAction<DailyRecord[]>>;
-  leaderboardData: LeaderboardEntry[];
-  setLeaderboardData: React.Dispatch<React.SetStateAction<LeaderboardEntry[]>>;
   isLoggingOut: boolean;
   setIsLoggingOut: React.Dispatch<React.SetStateAction<boolean>>;
   coins: number;
@@ -71,7 +70,6 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
   // All state variables are now correctly included
   const [lifetimeSteps, setLifetimeSteps] = useState(0);
   const [dailyRecords, setDailyRecords] = useState<DailyRecord[]>([]);
-  const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [coins, setCoins] = useState(0);
 
@@ -132,6 +130,7 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
       } else {
         setCoins(0); // Reset coins when user logs out
         setBoostSteps(0);
+        setLifetimeSteps(0); // Reset lifetime steps when user logs out
       }
     });
 
@@ -171,20 +170,70 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
             // avoid overwriting local, unsynced increments: keep the larger of local vs db
             setBoostSteps((prev) => Math.max(Number(prev) || 0, dbBoost));
             if (data.coins !== undefined) setCoins(data.coins || 0);
+            
+            // Load lifetime steps from Firebase (use lifetimeTotalSteps, fallback to lifetimeSteps)
+            const dbLifetimeSteps = Number(data.lifetimeTotalSteps || data.lifetimeSteps) || 0;
+            setLifetimeSteps(dbLifetimeSteps);
           } else {
+            // User document doesn't exist (possibly deleted), reset to defaults
             setBoostSteps(0);
+            setLifetimeSteps(0);
+            setCoins(0);
           }
         }, (err) => {
-          console.error('Error listening to user doc:', err);
+          // Handle errors silently (e.g., when user document is deleted)
+          console.log('User document listener error (possibly deleted):', err.message);
+          setBoostSteps(0);
+          setLifetimeSteps(0);
+          setCoins(0);
         });
       } else {
         setBoostSteps(0);
+        setLifetimeSteps(0);
       }
     });
 
     return () => {
       unsubscribeAuth();
       if (unsubscribeUserSnap) unsubscribeUserSnap();
+    };
+  }, []);
+
+  // Sync daily records from Firebase
+  useEffect(() => {
+    let unsubscribeDailyRecords: (() => void) | null = null;
+    // @ts-ignore
+    const currentAuth: any = auth;
+    const unsubscribeAuth = currentAuth.onAuthStateChanged((user: any) => {
+      if (user) {
+        const dailyStepsRef = collection(db, `users/${user.uid}/dailySteps`);
+        unsubscribeDailyRecords = onSnapshot(dailyStepsRef, (querySnapshot: any) => {
+          const records: DailyRecord[] = [];
+          querySnapshot.forEach((doc: any) => {
+            const data = doc.data();
+            records.push({
+              id: doc.id,
+              steps: data.steps || 0,
+              time: data.timestamp || null
+            });
+          });
+          
+          // Sort by date (newest first)
+          records.sort((a, b) => b.id.localeCompare(a.id));
+          setDailyRecords(records);
+        }, (err: any) => {
+          // Handle errors silently (e.g., when subcollection doesn't exist or user is deleted)
+          console.log('Daily records listener error (possibly deleted):', err.message);
+          setDailyRecords([]);
+        });
+      } else {
+        setDailyRecords([]);
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeDailyRecords) unsubscribeDailyRecords();
     };
   }, []);
 
@@ -195,8 +244,6 @@ export const StepProvider = ({ children }: { children: ReactNode }) => {
       setLifetimeSteps,
       dailyRecords,
       setDailyRecords,
-      leaderboardData,
-      setLeaderboardData,
       isLoggingOut,
       setIsLoggingOut,
       coins,

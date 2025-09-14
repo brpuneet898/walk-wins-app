@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, AppState, ScrollView, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Pressable, AppState, ScrollView, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Pedometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // @ts-ignore - firebaseConfig is a JS module without TS types
 import { auth, db } from '../../firebaseConfig';
 import { doc, getDoc, setDoc, updateDoc, increment, collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { useSteps } from '../../context/StepContext';
+import { useLeaderboard } from '../../context/LeaderboardContext';
 import { FontAwesome, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import Animated, {
@@ -41,6 +42,7 @@ const getLocalDateString = (date = new Date()) => {
 import { calculateTotalEarnings } from '../../utils/earnings';
 // Level system imports  
 import { useLevelSystem } from '../../context/LevelContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const AnimatedBackground = () => {
   const scale1 = useSharedValue(1);
@@ -156,8 +158,11 @@ export default function HomeScreen() {
   const [dailyStepGoal, setDailyStepGoal] = useState<number>(3000);
   const [userRank, setUserRank] = useState<number | null>(null);
   const [weeklyData, setWeeklyData] = useState<WeeklyDay[]>([]);
+  const [isWeeklyDataLoading, setIsWeeklyDataLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<any>(null); // 👈 ADD: User profile state
   const [showLineGraph, setShowLineGraph] = useState(false); // 👈 ADD: Line graph visibility state
+  const [totalEarnings, setTotalEarnings] = useState<number>(0);
+  const [isEarningsLoading, setIsEarningsLoading] = useState<boolean>(true);
   
   // Mood/Audio states
   const [showMoodModal, setShowMoodModal] = useState(false);
@@ -167,16 +172,112 @@ export default function HomeScreen() {
   // Audio context
   const { currentSong, isPlaying } = useAudio();
   
+  // Leaderboard context
+  const { leaderboardData: globalLeaderboardData, isLoadingLeaderboard } = useLeaderboard();
+  
   // Refs must be declared before using them
   const isSyncing = useRef(false);
   const lastStepValueFromListener = useRef(0);
   const boostStepsRef = useRef(0); // accumulate steps that occur during boost windows
   const isInitialized = useRef(false);
   
-  const { isLoggingOut, isBoostActive, boostType, coins, boostSteps: ctxBoostSteps = 0, setBoostSteps, leaderboardData } = useSteps() as any;
+  const { isLoggingOut, isBoostActive, boostType, coins, boostSteps: ctxBoostSteps = 0, setBoostSteps, setLifetimeSteps } = useSteps() as any;
   
   // Level system integration
   const { currentLevel, updateLifetimeSteps, lifetimeSteps } = useLevelSystem();
+  
+  // Track previous todaysSteps to detect when walking starts
+  const prevTodaysStepsRef = useRef(todaysSteps);
+
+  // Safe area insets
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    // If todaysSteps went from 0 to > 0 and weeklyData is empty, fetch data
+    if (prevTodaysStepsRef.current === 0 && todaysSteps > 0 && weeklyData.length === 0) {
+      console.log('[WEEKLY INIT] User started walking, ensuring weekly data is loaded');
+      fetchWeeklyData();
+    }
+    prevTodaysStepsRef.current = todaysSteps;
+  }, [todaysSteps, weeklyData.length]);
+
+  // Track previous weeklyData to detect when it disappears (with intelligent recovery)
+  const prevWeeklyDataRef = useRef(weeklyData);
+  const recoveryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRecoveryTimeRef = useRef(0);
+  const initialLoadCompleteRef = useRef(false);
+
+  useEffect(() => {
+    const prevLength = prevWeeklyDataRef.current.length;
+    const currentLength = weeklyData.length;
+    const now = Date.now();
+
+    // Only trigger recovery if:
+    // 1. Data actually disappeared (was > 0, now = 0)
+    // 2. Not currently loading leaderboard data
+    // 3. Not currently loading weekly data
+    // 4. At least 3 seconds since last recovery attempt
+    // 5. User is authenticated
+    // 6. Initial load is complete (prevent interference with startup)
+    const shouldRecover = (
+      prevLength > 0 &&
+      currentLength === 0 &&
+      !isLoadingLeaderboard &&
+      !isWeeklyDataLoading &&
+      (now - lastRecoveryTimeRef.current) > 3000 &&
+      currentAuth.currentUser &&
+      initialLoadCompleteRef.current
+    );
+
+    if (shouldRecover) {
+      console.log('[WEEKLY MONITOR] Data disappeared unexpectedly, scheduling intelligent recovery...');
+      console.log('[WEEKLY MONITOR] Previous:', prevLength, 'Current:', currentLength);
+
+      // Clear any existing timeout
+      if (recoveryTimeoutRef.current) {
+        clearTimeout(recoveryTimeoutRef.current);
+      }
+
+      // Debounce recovery by 1 second to avoid rapid triggers
+      recoveryTimeoutRef.current = setTimeout(async () => {
+        console.log('[WEEKLY MONITOR] Executing recovery after debounce...');
+        lastRecoveryTimeRef.current = Date.now();
+
+        // Try to recover data first
+        const recoverySuccess = await recoverWeeklyData();
+
+        // If recovery didn't work, try fetching fresh data
+        if (!recoverySuccess) {
+          console.log('[WEEKLY MONITOR] Recovery failed, trying fresh fetch...');
+          await fetchWeeklyData();
+        }
+      }, 1000);
+    } else if (recoveryTimeoutRef.current && currentLength > 0) {
+      // If data reappeared naturally, cancel pending recovery
+      console.log('[WEEKLY MONITOR] Data reappeared naturally, canceling recovery');
+      clearTimeout(recoveryTimeoutRef.current);
+      recoveryTimeoutRef.current = null;
+    }
+
+    prevWeeklyDataRef.current = weeklyData;
+  }, [weeklyData, isLoadingLeaderboard, isWeeklyDataLoading]);
+
+  // Mark initial load as complete after first successful data load
+  useEffect(() => {
+    if (weeklyData.length > 0 && !initialLoadCompleteRef.current) {
+      console.log('[WEEKLY MONITOR] Initial data load complete, enabling intelligent recovery');
+      initialLoadCompleteRef.current = true;
+    }
+  }, [weeklyData.length]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (recoveryTimeoutRef.current) {
+        clearTimeout(recoveryTimeoutRef.current);
+      }
+    };
+  }, []);
   
   const isBoostActiveRef = useRef(isBoostActive); // Track current boost status
   
@@ -212,9 +313,26 @@ export default function HomeScreen() {
     return null;
   };
 
-  const totalEarnings = calculateTotalEarnings(lifetimeSteps, coins, ctxBoostSteps, currentLevel);
+  // Fetch earnings asynchronously
+  const fetchEarnings = async () => {
+    try {
+      setIsEarningsLoading(true);
+      const earnings = await calculateTotalEarnings(lifetimeSteps, coins, ctxBoostSteps, currentLevel);
+      setTotalEarnings(earnings);
+    } catch (error) {
+      console.error('Error fetching earnings:', error);
+      setTotalEarnings(0);
+    } finally {
+      setIsEarningsLoading(false);
+    }
+  };
 
-  // boostSteps now comes from StepContext (real-time via onSnapshot)
+  // Fetch earnings when component mounts or dependencies change
+  useEffect(() => {
+    if (currentAuth.currentUser) {
+      fetchEarnings();
+    }
+  }, [lifetimeSteps, coins, ctxBoostSteps, currentLevel, currentAuth.currentUser]);
 
   // 👈 ADD: Fetch user profile data
   const fetchUserProfile = async () => {
@@ -236,19 +354,59 @@ export default function HomeScreen() {
   };
 
   // Fetch weekly data
-  const fetchWeeklyData = async () => {
-    console.log('[WEEKLY DATA] Starting to fetch weekly data...');
+  const fetchWeeklyData = async (retryCount = 0) => {
+    const maxRetries = 3;
+    console.log(`[WEEKLY DATA] Starting to fetch weekly data... (attempt ${retryCount + 1}/${maxRetries + 1})`);
     console.log('[WEEKLY DATA] Current todaysSteps value:', todaysSteps);
+
     try {
       const currentUser = currentAuth.currentUser;
+
+      // If no user and we haven't exceeded retries, wait a bit and retry
+      if (!currentUser && retryCount < maxRetries) {
+        console.log(`[WEEKLY DATA] No current user, retrying in 1 second... (${retryCount + 1}/${maxRetries})`);
+        setTimeout(() => fetchWeeklyData(retryCount + 1), 1000);
+        return;
+      }
+
+      // If still no user after retries, create basic weekly structure with today's data
       if (!currentUser) {
-        console.log('[WEEKLY DATA] No current user, skipping fetch');
+        console.log('[WEEKLY DATA] No user after retries, creating basic weekly structure');
+        const today = new Date();
+        const dayLabels = ['M', 'T', 'W', 'Th', 'F', 'S', 'Su'];
+        const basicWeekData = [];
+
+        // Get Monday of current week
+        const monday = new Date(today);
+        const dayOfWeek = today.getDay();
+        const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        monday.setDate(today.getDate() + diff);
+
+        for (let i = 0; i < 7; i++) {
+          const date = new Date(monday);
+          date.setDate(monday.getDate() + i);
+          const dateString = getLocalDateString(date);
+          const isToday = dateString === getLocalDateString(today);
+
+          basicWeekData.push({
+            dayLabel: dayLabels[i],
+            date: date.getDate().toString(),
+            steps: isToday ? todaysSteps : 0,
+            goal: dailyStepGoal,
+            isToday
+          });
+        }
+
+        console.log('[WEEKLY DATA] Setting basic weekly data:', basicWeekData.map(d => `${d.dayLabel}:${d.steps}`).join(', '));
+        setWeeklyData(basicWeekData);
+        setIsWeeklyDataLoading(false);
         return;
       }
 
       // Don't fetch during logout to prevent permission errors
       if (isLoggingOut) {
         console.log('[WEEKLY DATA] Skipping fetch during logout');
+        setIsWeeklyDataLoading(false);
         return;
       }
 
@@ -257,40 +415,82 @@ export default function HomeScreen() {
       const today = new Date();
       const weekData = [];
       const dayLabels = ['M', 'T', 'W', 'Th', 'F', 'S', 'Su'];
-      
+
       // Get Monday of current week
       const monday = new Date(today);
       const dayOfWeek = today.getDay();
-      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Adjust for Sunday (0) and Monday (1)
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
       monday.setDate(today.getDate() + diff);
 
       console.log('[WEEKLY DATA] Today:', getLocalDateString(today));
       console.log('[WEEKLY DATA] Monday of current week:', getLocalDateString(monday));
 
+      // First, try to load cached data immediately to show something to the user
+      const cachedWeekData = [];
       for (let i = 0; i < 7; i++) {
         const date = new Date(monday);
         date.setDate(monday.getDate() + i);
-        
+        const dateString = getLocalDateString(date);
+        const isToday = dateString === getLocalDateString(today);
+
+        // Try to get cached data from AsyncStorage
+        try {
+          const storedSteps = await AsyncStorage.getItem(`dailySteps_${dateString}`);
+          const cachedSteps = storedSteps ? parseInt(storedSteps, 10) : 0;
+
+          cachedWeekData.push({
+            dayLabel: dayLabels[i],
+            date: date.getDate().toString(),
+            steps: isToday ? todaysSteps : cachedSteps,
+            goal: dailyStepGoal,
+            isToday
+          });
+        } catch (cacheError) {
+          console.log(`[WEEKLY DATA] Cache error for ${dateString}:`, cacheError);
+          cachedWeekData.push({
+            dayLabel: dayLabels[i],
+            date: date.getDate().toString(),
+            steps: isToday ? todaysSteps : 0,
+            goal: dailyStepGoal,
+            isToday
+          });
+        }
+      }
+
+      // Show cached data immediately if we have any non-zero values
+      const hasCachedData = cachedWeekData.some(day => day.steps > 0);
+      if (hasCachedData) {
+        console.log('[WEEKLY DATA] Showing cached data immediately:', cachedWeekData.map(d => `${d.dayLabel}:${d.steps}`).join(', '));
+        setWeeklyData(cachedWeekData);
+        setIsWeeklyDataLoading(false);
+      }
+
+      // Now fetch fresh data from Firestore
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(monday);
+        date.setDate(monday.getDate() + i);
+
         const dateString = getLocalDateString(date);
         const dayLabel = dayLabels[i];
         const isToday = dateString === getLocalDateString(today);
-        
-        let steps = 0;
-        
+
+        let steps = cachedWeekData[i]?.steps || 0; // Start with cached value
+
         if (isToday) {
-          // For today, use the live todaysSteps value
+          // For today, ALWAYS use the live todaysSteps value - never override with stored data
+          // This prevents the reset issue when fetchWeeklyData is called during active walking
           steps = todaysSteps;
-          console.log(`[WEEKLY DATA] ${dateString} (${dayLabel}): IS TODAY - Using live todaysSteps=${steps}`);
+          console.log(`[WEEKLY DATA] ${dateString} (${dayLabel}): IS TODAY - Using live todaysSteps=${steps} (never overridden by stored data)`);
         } else {
-          // For other days, check both Firestore and AsyncStorage
+          // For past days, check both Firestore and AsyncStorage
           try {
             console.log(`[WEEKLY DATA] Fetching data for ${dateString} (${dayLabel})...`);
-            
+
             // First check AsyncStorage for potentially newer data
             const storedSteps = await AsyncStorage.getItem(`dailySteps_${dateString}`);
             const localSteps = storedSteps ? parseInt(storedSteps, 10) : 0;
             console.log(`[WEEKLY DATA] ${dateString} AsyncStorage steps: ${localSteps}`);
-            
+
             // Then try Firestore (with proper error handling)
             let firestoreSteps = 0;
             try {
@@ -307,17 +507,28 @@ export default function HomeScreen() {
               console.log(`[WEEKLY DATA] Firestore error for ${dateString}:`, firestoreError.message);
               // If Firestore fails, we'll use local data
             }
-            
-            // Use the higher value (most recent data)
-            steps = Math.max(firestoreSteps, localSteps);
-            
+
+            // Use the higher value (most recent data) - but never use 0 if we have valid cached data
+            const higherValue = Math.max(firestoreSteps, localSteps);
+            if (higherValue > 0) {
+              steps = higherValue;
+            } else if (steps > 0) {
+              // Keep existing cached value if both sources return 0
+              console.log(`[WEEKLY DATA] Both sources returned 0 for ${dateString}, keeping cached value: ${steps}`);
+            } else {
+              steps = 0;
+            }
+
             console.log(`[WEEKLY DATA] ${dateString} (${dayLabel}): Firestore=${firestoreSteps}, Local=${localSteps}, Using=${steps}`);
           } catch (error: any) {
             console.log(`[WEEKLY DATA] Error fetching data for ${dateString}:`, error.message);
-            steps = 0;
+            // Don't reset to 0 if we have valid cached data
+            if (steps === 0) {
+              steps = 0;
+            }
           }
         }
-        
+
         weekData.push({
           dayLabel,
           date: date.getDate().toString(),
@@ -328,10 +539,11 @@ export default function HomeScreen() {
 
         console.log(`[WEEKLY DATA] Added to weekData: ${dayLabel} = ${steps} steps (isToday: ${isToday})`);
       }
-      
+
       console.log('[WEEKLY DATA] Final week data:', weekData.map(d => `${d.dayLabel}:${d.steps}`).join(', '));
       console.log('[WEEKLY DATA] Setting weeklyData state...');
       setWeeklyData(weekData);
+      setIsWeeklyDataLoading(false);
     } catch (error: any) {
       console.error('[WEEKLY DATA] Major error:', error.message);
       if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
@@ -339,31 +551,67 @@ export default function HomeScreen() {
       } else {
         console.error('Error fetching weekly data:', error);
       }
+
+      // If we haven't exceeded retries and it's an auth-related error, retry
+      if (retryCount < maxRetries && (error?.code === 'permission-denied' || error?.message?.includes('auth'))) {
+        console.log(`[WEEKLY DATA] Auth error, retrying in 2 seconds... (${retryCount + 1}/${maxRetries})`);
+        setTimeout(() => fetchWeeklyData(retryCount + 1), 2000);
+      } else {
+        // If all retries failed, set loading to false
+        setIsWeeklyDataLoading(false);
+      }
     }
   };
 
   const getUserRankFromLeaderboard = () => {
     try {
       const currentUser = currentAuth.currentUser;
-      if (!currentUser || !leaderboardData || leaderboardData.length === 0) {
+
+      // If still loading leaderboard data, don't update rank yet
+      if (isLoadingLeaderboard) {
+        console.log('[RANK] Leaderboard data still loading, keeping current rank');
+        return;
+      }
+
+      // If no user or no leaderboard data available
+      if (!currentUser || !globalLeaderboardData || globalLeaderboardData.length === 0) {
+        // If user has steps today but no leaderboard data, show loading state
+        if (todaysSteps > 0) {
+          console.log('[RANK] No leaderboard data but user has steps, keeping current rank');
+          return;
+        }
+        // If user has 0 steps, show "#_"
         setUserRank(null);
         return;
       }
 
       // Find the current user in the leaderboard data by userId
-      const userEntry = leaderboardData.find((entry: any) => {
+      const userEntry = globalLeaderboardData.find((entry: any) => {
         return entry.userId === currentUser.uid;
       });
 
       if (userEntry) {
-        setUserRank(userEntry.rank);
+        if (userEntry.rank !== userRank) {
+          console.log(`[RANK] Updated user rank: ${userRank} → ${userEntry.rank}`);
+          setUserRank(userEntry.rank);
+        }
       } else {
-        // User not found in leaderboard
-        setUserRank(null);
+        // User not found in leaderboard - if they have steps today, they should be ranked
+        if (todaysSteps > 0) {
+          // User has steps but not in leaderboard yet - this might be due to data sync delay
+          console.log('[RANK] User has steps but not in leaderboard, keeping current rank');
+          return;
+        } else {
+          // User has 0 steps, show "#_"
+          setUserRank(null);
+        }
       }
     } catch (error) {
       console.error('Error getting user rank from leaderboard:', error);
-      setUserRank(null);
+      // On error, keep current rank if we have one, otherwise show "#_"
+      if (todaysSteps === 0) {
+        setUserRank(null);
+      }
     }
   };
 
@@ -379,6 +627,185 @@ export default function HomeScreen() {
 
   const handleBoostBadgeTap = () => {
     setShowBoostTooltip(true);
+  };
+
+  // Backup save mechanism for critical data persistence
+  const backupTodaysSteps = async (steps: number) => {
+    if (steps > 0) {
+      const todayString = getLocalDateString();
+      const backupKey = `backup_dailySteps_${todayString}`;
+
+      try {
+        await AsyncStorage.setItem(backupKey, String(steps));
+        console.log(`[BACKUP] Saved backup of ${steps} steps for ${todayString}`);
+      } catch (error) {
+        console.error('[BACKUP] Failed to save backup:', error);
+      }
+    }
+  };
+
+  // Emergency recovery of today's steps
+  const recoverTodaysSteps = async (): Promise<number> => {
+    const todayString = getLocalDateString();
+    const primaryKey = `dailySteps_${todayString}`;
+    const backupKey = `backup_dailySteps_${todayString}`;
+
+    try {
+      // Try primary storage first
+      const primarySteps = await AsyncStorage.getItem(primaryKey);
+      if (primarySteps) {
+        const steps = parseInt(primarySteps, 10);
+        if (steps > 0) return steps;
+      }
+
+      // Try backup storage
+      const backupSteps = await AsyncStorage.getItem(backupKey);
+      if (backupSteps) {
+        const steps = parseInt(backupSteps, 10);
+        if (steps > 0) {
+          console.log(`[EMERGENCY RECOVERY] Recovered ${steps} steps from backup`);
+          // Restore to primary storage
+          await AsyncStorage.setItem(primaryKey, String(steps));
+          return steps;
+        }
+      }
+    } catch (error) {
+      console.error('[EMERGENCY RECOVERY] Failed to recover steps:', error);
+    }
+
+    return 0;
+  };
+
+  // Enhanced recovery mechanism for weekly data
+  const recoverWeeklyData = async () => {
+    console.log('[RECOVERY] Attempting to recover weekly data...');
+
+    try {
+      const today = new Date();
+      const todayString = getLocalDateString(today);
+      const recoveredData = [];
+
+      // Get Monday of current week
+      const monday = new Date(today);
+      const dayOfWeek = today.getDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      monday.setDate(today.getDate() + diff);
+
+      const dayLabels = ['M', 'T', 'W', 'Th', 'F', 'S', 'Su'];
+
+      // Try to recover data from AsyncStorage for each day
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(monday);
+        date.setDate(monday.getDate() + i);
+        const dateString = getLocalDateString(date);
+        const isToday = dateString === todayString;
+
+        let steps = 0;
+
+        try {
+          const storedSteps = await AsyncStorage.getItem(`dailySteps_${dateString}`);
+          if (storedSteps) {
+            steps = parseInt(storedSteps, 10);
+            console.log(`[RECOVERY] Recovered ${steps} steps for ${dateString}`);
+          }
+        } catch (error) {
+          console.log(`[RECOVERY] Failed to recover data for ${dateString}:`, error);
+        }
+
+        // For today, prioritize the current live todaysSteps value
+        if (isToday) {
+          // Always use todaysSteps for today, unless it's 0 and we have valid stored data
+          if (todaysSteps > 0 || steps === 0) {
+            steps = todaysSteps;
+          }
+        }
+
+        recoveredData.push({
+          dayLabel: dayLabels[i],
+          date: date.getDate().toString(),
+          steps,
+          goal: dailyStepGoal,
+          isToday
+        });
+      }
+
+      const hasRecoveredData = recoveredData.some(day => day.steps > 0);
+      if (hasRecoveredData) {
+        console.log('[RECOVERY] Successfully recovered data:', recoveredData.map(d => `${d.dayLabel}:${d.steps}`).join(', '));
+        setWeeklyData(recoveredData);
+        setIsWeeklyDataLoading(false);
+        return true;
+      } else {
+        console.log('[RECOVERY] No data to recover');
+        return false;
+      }
+    } catch (error) {
+      console.error('[RECOVERY] Recovery failed:', error);
+      return false;
+    }
+  };
+
+  // Calculate lifetime steps from all daily steps in database
+  const calculateLifetimeFromDailySteps = async (userId: string): Promise<number> => {
+    try {
+      const dailyStepsRef = collection(db, `users/${userId}/dailySteps`);
+      const querySnapshot = await getDocs(dailyStepsRef);
+
+      let totalLifetimeSteps = 0;
+      querySnapshot.forEach((doc) => {
+        const dayData = doc.data();
+        // Include both regular steps and boost steps in lifetime total
+        totalLifetimeSteps += (dayData.steps || 0) + (dayData.boostSteps || 0);
+      });
+
+      console.log(`[LIFETIME CALC] Calculated lifetime steps: ${totalLifetimeSteps} from ${querySnapshot.size} days`);
+      return totalLifetimeSteps;
+    } catch (error) {
+      console.error('[LIFETIME CALC] Error calculating lifetime steps:', error);
+      return 0;
+    }
+  };
+
+  // Fetch latest data from database (called 10 seconds after write)
+  const fetchLatestDataFromDatabase = async () => {
+    try {
+      const currentUser = currentAuth.currentUser;
+      if (!currentUser) return;
+
+      console.log('[FETCH] Fetching latest data from database...');
+
+      // Fetch today's steps
+      const todayString = getLocalDateString();
+      const dailyStepsRef = doc(db, `users/${currentUser.uid}/dailySteps`, todayString);
+      const dailySnap = await getDoc(dailyStepsRef);
+      
+      if (dailySnap.exists()) {
+        const dbSteps = dailySnap.data().steps || 0;
+        const currentLocalSteps = todaysSteps;
+        
+        if (dbSteps !== currentLocalSteps) {
+          console.log(`[FETCH] Updating local steps: ${currentLocalSteps} → ${dbSteps}`);
+          setTodaysSteps(dbSteps);
+          await AsyncStorage.setItem(`dailySteps_${todayString}`, String(dbSteps));
+        }
+      }
+
+      // Fetch updated lifetime steps
+      const newLifetimeSteps = await calculateLifetimeFromDailySteps(currentUser.uid);
+      if (newLifetimeSteps !== lifetimeSteps) {
+        console.log(`[FETCH] Updating lifetime steps: ${lifetimeSteps} → ${newLifetimeSteps}`);
+        setLifetimeSteps(newLifetimeSteps);
+        await updateLifetimeSteps(newLifetimeSteps);
+      }
+
+      // Refresh weekly data
+      await fetchWeeklyData();
+      getUserRankFromLeaderboard();
+
+      console.log('[FETCH] Data fetch completed successfully');
+    } catch (error) {
+      console.error('[FETCH] Error fetching data:', error);
+    }
   };
 
   const syncToFirebase = async (skipAuthCheck = false) => {
@@ -425,80 +852,77 @@ export default function HomeScreen() {
       const dailyDocRef = doc(db, `users/${userIdToUse}/dailySteps`, todayString);
       const userDocRef = doc(db, 'users', userIdToUse);
       
-      // Check current steps in database with better error handling
-      let stepsAlreadyInDb = 0;
+      // Replace daily steps instead of incrementing (fixes consistency issue)
+      console.log('[SYNC] Replacing daily steps with current value:', currentStepCount);
+      
       try {
-        const dailyDocSnap = await getDoc(dailyDocRef);
-        stepsAlreadyInDb = dailyDocSnap.exists() ? dailyDocSnap.data().steps || 0 : 0;
-        console.log('[SYNC] Steps already in DB:', stepsAlreadyInDb);
-      } catch (readError: any) {
-        console.log('[SYNC] Error reading from DB, assuming 0 steps:', readError.message);
-        stepsAlreadyInDb = 0;
-      }
-      
-      const incrementAmount = currentStepCount - stepsAlreadyInDb;
-      
-      if (incrementAmount > 0) {
-        console.log('[SYNC] Incrementing by:', incrementAmount);
+        await setDoc(dailyDocRef, { steps: currentStepCount }, { merge: true });
+        console.log('[SYNC] Successfully updated daily steps');
         
+        // Recalculate lifetime steps from all daily steps in database
+        const newLifetimeSteps = await calculateLifetimeFromDailySteps(userIdToUse);
+        console.log('[SYNC] Recalculated lifetime steps:', newLifetimeSteps);
+        
+        // Update user document with recalculated lifetime steps
+        await updateDoc(userDocRef, { lifetimeTotalSteps: newLifetimeSteps });
+        console.log('[SYNC] Successfully updated lifetime steps');
+
+        // Update level system with new lifetime steps (only if not logging out)
+        if (!isLoggingOut) {
+          await updateLifetimeSteps(newLifetimeSteps);
+          setLifetimeSteps(newLifetimeSteps);
+        }
+
+        // Also sync any boosted steps accumulated locally for today
         try {
-          await setDoc(dailyDocRef, { steps: currentStepCount }, { merge: true });
-          console.log('[SYNC] Successfully updated daily steps');
-          
-          await updateDoc(userDocRef, { lifetimeTotalSteps: increment(incrementAmount) });
-          console.log('[SYNC] Successfully updated lifetime steps');
+          const storedBoost = await AsyncStorage.getItem(`dailyBoostSteps_${todayString}`);
+          const boostCount = storedBoost ? parseInt(storedBoost, 10) : 0;
+          if (boostCount > 0) {
+            console.log('[SYNC] Syncing boost steps:', boostCount);
+            // write boostSteps into the daily doc (merge)
+            await setDoc(dailyDocRef, { steps: currentStepCount, boostSteps: boostCount }, { merge: true });
+            // increment aggregated boostSteps on user doc
+            await updateDoc(userDocRef, { boostSteps: increment(boostCount) });
+            // clear stored boost and reset local accumulator
+            await AsyncStorage.removeItem(`dailyBoostSteps_${todayString}`);
+            boostStepsRef.current = 0;
+            // also sync context value (best-effort) - only if not logging out
+            if (!isLoggingOut) {
+              setBoostSteps((prev: number) => Math.max((prev || 0) - boostCount, 0));
+            }
+          }
+        } catch (boostError: any) {
+          console.error('[SYNC] Error syncing boostSteps:', boostError.message);
+        }
 
-          // Update level system with new lifetime steps (only if not logging out)
+        // Fetch updated rank and weekly data after syncing (only if not logging out)
+        if (!isLoggingOut && currentUser) {
+          getUserRankFromLeaderboard();
+          // Small delay to ensure Firebase data is committed before fetching
+          setTimeout(() => fetchWeeklyData(), 500);
+        }
+        
+        // Schedule delayed fetch after 10 seconds
+        if (!isLoggingOut) {
+          setTimeout(() => {
+            fetchLatestDataFromDatabase();
+          }, 10000); // 10 second delay
+        }
+        
+        console.log('[SYNC] Sync completed successfully');
+      } catch (writeError: any) {
+        if (writeError.code === 'permission-denied') {
+          console.error('[SYNC] Permission denied - authentication may have expired');
+          // Don't throw error during logout to prevent blocking
           if (!isLoggingOut) {
-            const newLifetimeSteps = lifetimeSteps + incrementAmount;
-            await updateLifetimeSteps(newLifetimeSteps);
+            throw writeError;
           }
-
-          // Also sync any boosted steps accumulated locally for today
-          try {
-            const storedBoost = await AsyncStorage.getItem(`dailyBoostSteps_${todayString}`);
-            const boostCount = storedBoost ? parseInt(storedBoost, 10) : 0;
-            if (boostCount > 0) {
-              console.log('[SYNC] Syncing boost steps:', boostCount);
-              // write boostSteps into the daily doc (merge)
-              await setDoc(dailyDocRef, { steps: currentStepCount, boostSteps: boostCount }, { merge: true });
-              // increment aggregated boostSteps on user doc
-              await updateDoc(userDocRef, { boostSteps: increment(boostCount) });
-              // clear stored boost and reset local accumulator
-              await AsyncStorage.removeItem(`dailyBoostSteps_${todayString}`);
-              boostStepsRef.current = 0;
-              // also sync context value (best-effort) - only if not logging out
-              if (!isLoggingOut) {
-                setBoostSteps((prev: number) => Math.max((prev || 0) - boostCount, 0));
-              }
-            }
-          } catch (boostError: any) {
-            console.error('[SYNC] Error syncing boostSteps:', boostError.message);
-          }
-
-          // Fetch updated rank and weekly data after syncing (only if not logging out)
-          if (!isLoggingOut && currentUser) {
-            getUserRankFromLeaderboard();
-            await fetchWeeklyData();
-          }
-          
-          console.log('[SYNC] Sync completed successfully');
-        } catch (writeError: any) {
-          if (writeError.code === 'permission-denied') {
-            console.error('[SYNC] Permission denied - authentication may have expired');
-            // Don't throw error during logout to prevent blocking
-            if (!isLoggingOut) {
-              throw writeError;
-            }
-          } else {
-            console.error('[SYNC] Write error:', writeError.message);
-            if (!isLoggingOut) {
-              throw writeError; // Re-throw to be caught by outer try-catch
-            }
+        } else {
+          console.error('[SYNC] Write error:', writeError.message);
+          if (!isLoggingOut) {
+            throw writeError; // Re-throw to be caught by outer try-catch
           }
         }
-      } else {
-        console.log('[SYNC] No new steps to sync');
       }
     } catch (error: any) {
       // Handle Firebase offline errors gracefully
@@ -545,7 +969,15 @@ export default function HomeScreen() {
 
       const todayString = getLocalDateString();
       const storedData = await AsyncStorage.getItem(`dailySteps_${todayString}`);
-      const initialTodaysSteps = storedData ? parseInt(storedData, 10) : 0;
+      let initialTodaysSteps = storedData ? parseInt(storedData, 10) : 0;
+
+      // If no steps in primary storage, try emergency recovery
+      if (initialTodaysSteps === 0) {
+        console.log('[INIT] No steps in primary storage, attempting emergency recovery...');
+        initialTodaysSteps = await recoverTodaysSteps();
+      }
+
+      console.log(`[INIT] Initial todaysSteps from storage: ${initialTodaysSteps}`);
       
       // Check Firestore for today's steps and use the higher value
       let finalTodaysSteps = initialTodaysSteps;
@@ -564,7 +996,7 @@ export default function HomeScreen() {
       } catch (error) {
         console.log('[STEP SYNC] Failed to load from Firestore, using local value');
       }
-      
+
       setTodaysSteps(finalTodaysSteps);
 
       // Fetch initial data
@@ -583,59 +1015,81 @@ export default function HomeScreen() {
         }
       } catch (error) {
         // fallback to watchStepCount
-      }
-
-      subscription = Pedometer.watchStepCount(result => {
+      }      subscription = Pedometer.watchStepCount(result => {
         const currentListenerSteps = result.steps;
         if (!isInitialized.current) {
           lastStepValueFromListener.current = currentListenerSteps;
           isInitialized.current = true;
+          console.log(`[PEDOMETER] Initialized with ${currentListenerSteps} steps`);
           return;
         }
         let incrementStep = currentListenerSteps - lastStepValueFromListener.current;
         lastStepValueFromListener.current = currentListenerSteps;
-        if (incrementStep < 0) incrementStep = 0;
-          if (incrementStep > 0) {
-            console.log(`[STEP DEBUG] Adding ${incrementStep} steps. Boost active: ${isBoostActiveRef.current}`);
-            setTodaysSteps(prevSteps => prevSteps + incrementStep);
-            try {
-              // If we're in a boost window, accumulate boosted steps locally and persist to device storage
-              if (isBoostActiveRef.current) {
-                console.log(`[BOOST DEBUG] Adding ${incrementStep} boost steps! Total boost: ${boostStepsRef.current + incrementStep}`);
-                boostStepsRef.current += incrementStep;
-                const todayStringLocal = getLocalDateString();
-                AsyncStorage.setItem(`dailyBoostSteps_${todayStringLocal}`, String(boostStepsRef.current));
-                // update app-wide boostSteps immediately so UI earnings reflect boosted rate right away
-                setBoostSteps((prev: number) => (Number(prev) || 0) + incrementStep);
-                console.log(`[BOOST DEBUG] Updated context boostSteps. Previous context value: ${boostSteps}`);
-                
-                // Force sync boost steps to Firestore immediately during boost periods
-                // But only if we're not in the process of logging out
-                if (!isLoggingOut) {
-                  setTimeout(() => {
-                    console.log(`[BOOST DEBUG] Force syncing boost steps to Firestore...`);
-                    syncToFirebase();
-                  }, 1000); // Sync after 1 second delay
-                }
-              } else {
-                console.log(`[BOOST DEBUG] No boost - normal step tracking only`);
+
+        // Validate increment to prevent negative or unreasonably large values
+        if (incrementStep < 0) {
+          console.log(`[PEDOMETER] Negative increment detected (${incrementStep}), resetting to 0`);
+          incrementStep = 0;
+        } else if (incrementStep > 1000) {
+          console.log(`[PEDOMETER] Large increment detected (${incrementStep}), capping at 100`);
+          incrementStep = 100; // Cap at reasonable maximum
+        }
+
+        if (incrementStep > 0) {
+          console.log(`[STEP DEBUG] Adding ${incrementStep} steps. Boost active: ${isBoostActiveRef.current}`);
+          setTodaysSteps(prevSteps => {
+            const newSteps = prevSteps + incrementStep;
+            console.log(`[STEP DEBUG] Steps updated: ${prevSteps} → ${newSteps}`);
+            return newSteps;
+          });
+
+          try {
+            // If we're in a boost window, accumulate boosted steps locally and persist to device storage
+            if (isBoostActiveRef.current) {
+              console.log(`[BOOST DEBUG] Adding ${incrementStep} boost steps! Total boost: ${boostStepsRef.current + incrementStep}`);
+              boostStepsRef.current += incrementStep;
+              const todayStringLocal = getLocalDateString();
+              AsyncStorage.setItem(`dailyBoostSteps_${todayStringLocal}`, String(boostStepsRef.current)).catch(error => {
+                console.error('[BOOST DEBUG] Failed to save boost steps:', error);
+              });
+              // update app-wide boostSteps immediately so UI earnings reflect boosted rate right away
+              setBoostSteps((prev: number) => (Number(prev) || 0) + incrementStep);
+              console.log(`[BOOST DEBUG] Updated context boostSteps. Previous context value: ${boostSteps}`);
+
+              // Force immediate sync for boost steps (bypasses 5-minute cycle)
+              if (!isLoggingOut) {
+                console.log(`[BOOST DEBUG] Force immediate sync for boost steps...`);
+                syncToFirebase();
               }
-            } catch (e) {
-              // silent fail for AsyncStorage
-              console.error('[BOOST DEBUG] Error saving boost steps:', e);
+            } else {
+              console.log(`[BOOST DEBUG] No boost - normal step tracking only`);
             }
+          } catch (e) {
+            console.error('[BOOST DEBUG] Error in boost handling:', e);
           }
+        }
       });
-      hourlySyncInterval = setInterval(syncToFirebase, 3600000);
+      hourlySyncInterval = setInterval(syncToFirebase, 300000); // 5-minute sync cycles
     };
     init();
 
     const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'background' || nextAppState === 'inactive') {
-        console.log('[APP STATE] App going to background, syncing data...');
-        // Only sync if we have a current user or if we're in the process of logging out
-        if (currentAuth.currentUser || isLoggingOut) {
+      if (nextAppState === 'active') {
+        console.log('[APP STATE] App becoming active, syncing latest data...');
+        // Sync when app becomes active to ensure data is up to date
+        if (currentAuth.currentUser && !isLoggingOut) {
           syncToFirebase();
+        }
+
+        // Enhanced weekly data recovery when app becomes active
+        if (user && (weeklyData.length === 0 || weeklyData.every(day => day.steps === 0))) {
+          console.log('[APP STATE] App active, ensuring weekly data is loaded and valid');
+          // First try recovery, then fetch if needed
+          recoverWeeklyData().then((recovered) => {
+            if (!recovered) {
+              fetchWeeklyData();
+            }
+          });
         }
       }
     });
@@ -645,9 +1099,8 @@ export default function HomeScreen() {
       appStateSubscription?.remove();
       if (hourlySyncInterval) clearInterval(hourlySyncInterval);
       
-      // Final sync - always attempt, regardless of logout state
-      console.log('[CLEANUP] Performing final sync before unmount, isLoggingOut:', isLoggingOut);
-      syncToFirebase(true); // Skip auth check for final sync
+      // Removed final sync on unmount - 5-minute cycle handles persistence
+      console.log('[CLEANUP] Component unmounting, 5-minute sync cycle will continue');
     };
   }, [isLoggingOut]);
 
@@ -673,30 +1126,54 @@ export default function HomeScreen() {
     return () => clearInterval(goalUpdateInterval);
   }, [dailyStepGoal]);
 
-  // Update rank when leaderboard data changes
+  // Update rank when leaderboard data changes or loading state changes
   useEffect(() => {
     getUserRankFromLeaderboard();
-  }, [leaderboardData]);
+  }, [globalLeaderboardData, isLoadingLeaderboard]);
+
+  // Update rank when today's steps change (in case user starts walking)
+  useEffect(() => {
+    getUserRankFromLeaderboard();
+  }, [todaysSteps]);
 
   // Update weekly data when today's steps change
   useEffect(() => {
     console.log('[WEEKLY UPDATE] todaysSteps changed to:', todaysSteps);
     console.log('[WEEKLY UPDATE] Current weeklyData length:', weeklyData.length);
-    if (weeklyData.length > 0) {
-      console.log('[WEEKLY UPDATE] Updating today\'s steps in weeklyData...');
-      const updatedData = weeklyData.map(day => {
-        if (day.isToday) {
-          console.log(`[WEEKLY UPDATE] Found today (${day.dayLabel}), updating steps from ${day.steps} to ${todaysSteps}`);
-          return { ...day, steps: todaysSteps };
-        }
-        return day;
-      });
-      console.log('[WEEKLY UPDATE] New weekly data:', updatedData.map(d => `${d.dayLabel}:${d.steps}`).join(', '));
-      setWeeklyData(updatedData);
+
+    // Only update if we have valid weekly data and todaysSteps is reasonable
+    if (weeklyData.length > 0 && todaysSteps >= 0) {
+      // Check if today's steps actually changed significantly
+      const todayEntry = weeklyData.find(day => day.isToday);
+      const currentTodaySteps = todayEntry?.steps || 0;
+
+      // Always update weekly data when todaysSteps changes (removed 10-step threshold)
+      const shouldUpdate = true;
+
+      if (shouldUpdate) {
+        console.log('[WEEKLY UPDATE] Updating today\'s steps in existing weeklyData...');
+        console.log(`[WEEKLY UPDATE] Found today (${todayEntry?.dayLabel}), updating steps from ${currentTodaySteps} to ${todaysSteps}`);
+
+        const updatedData = weeklyData.map(day => {
+          if (day.isToday) {
+            return { ...day, steps: todaysSteps };
+          }
+          return day;
+        });
+
+        console.log('[WEEKLY UPDATE] New weekly data:', updatedData.map(d => `${d.dayLabel}:${d.steps}`).join(', '));
+        setWeeklyData(updatedData);
+      } else {
+        console.log('[WEEKLY UPDATE] Today\'s steps haven\'t changed significantly, skipping update');
+      }
+    } else if (todaysSteps > 0 && !isWeeklyDataLoading && !isLoadingLeaderboard) {
+      // If weeklyData is empty but we have steps and not loading, try to fetch weekly data
+      console.log('[WEEKLY UPDATE] weeklyData is empty but todaysSteps > 0, fetching weekly data...');
+      fetchWeeklyData();
     } else {
-      console.log('[WEEKLY UPDATE] weeklyData is empty, skipping update');
+      console.log('[WEEKLY UPDATE] weeklyData is empty and no steps yet, or still loading, skipping update');
     }
-  }, [todaysSteps]);
+  }, [todaysSteps, weeklyData.length, isWeeklyDataLoading, isLoadingLeaderboard]);
 
   // Force refresh weekly data when app starts or user changes
   useEffect(() => {
@@ -706,20 +1183,53 @@ export default function HomeScreen() {
         await fetchWeeklyData();
       }
     };
-    
+
     // Small delay to ensure authentication is settled
     const timeout = setTimeout(refreshData, 1000);
     return () => clearTimeout(timeout);
   }, [user, dailyStepGoal]); // Refresh when user or daily goal changes
 
+  // Fallback: Ensure weekly data is always available
+  useEffect(() => {
+    const ensureWeeklyData = () => {
+      // If we have todaysSteps but no weeklyData, create basic structure
+      if (todaysSteps > 0 && weeklyData.length === 0 && user) {
+        console.log('[WEEKLY FALLBACK] Creating fallback weekly data structure');
+        fetchWeeklyData();
+      }
+    };
+
+    // Check after a short delay to allow other effects to run first
+    const timeout = setTimeout(ensureWeeklyData, 2000);
+    return () => clearTimeout(timeout);
+  }, [todaysSteps, weeklyData.length, user]);
+
   useEffect(() => {
     const saveToDevice = async () => {
-      const todayString = getLocalDateString();
-      await AsyncStorage.setItem(`dailySteps_${todayString}`, String(todaysSteps));
+      if (isInitialized.current && todaysSteps > 0) {
+        const todayString = getLocalDateString();
+        try {
+          await AsyncStorage.setItem(`dailySteps_${todayString}`, String(todaysSteps));
+          console.log(`[ASYNC STORAGE] Successfully saved ${todaysSteps} steps for ${todayString}`);
+
+          // Also create a backup
+          await backupTodaysSteps(todaysSteps);
+        } catch (error) {
+          console.error('[ASYNC STORAGE] Failed to save todaysSteps:', error);
+          // Try to save again after a short delay
+          setTimeout(async () => {
+            try {
+              await AsyncStorage.setItem(`dailySteps_${todayString}`, String(todaysSteps));
+              console.log(`[ASYNC STORAGE] Retry save successful for ${todayString}`);
+              await backupTodaysSteps(todaysSteps);
+            } catch (retryError) {
+              console.error('[ASYNC STORAGE] Retry save failed:', retryError);
+            }
+          }, 1000);
+        }
+      }
     };
-    if (isInitialized.current) {
-      saveToDevice();
-    }
+    saveToDevice();
   }, [todaysSteps]);
 
   // Update available moods based on time
@@ -778,17 +1288,17 @@ export default function HomeScreen() {
         if (finalStepCount > 0) {
           const dailyDocRef = doc(db, `users/${currentUser.uid}/dailySteps`, lastSyncDate);
           const userDocRef = doc(db, 'users', currentUser.uid);
-          const dailyDocSnap = await getDoc(dailyDocRef);
-          const stepsAlreadyInDb = dailyDocSnap.exists() ? dailyDocSnap.data().steps : 0;
-          const incrementAmount = finalStepCount - stepsAlreadyInDb;
-          if (incrementAmount > 0) {
-            await setDoc(dailyDocRef, { steps: finalStepCount });
-            await updateDoc(userDocRef, { lifetimeTotalSteps: increment(incrementAmount) });
-            
-            // Update level system with new lifetime steps
-            const newLifetimeSteps = lifetimeSteps + incrementAmount;
-            await updateLifetimeSteps(newLifetimeSteps);
-          }
+          
+          // Replace daily steps instead of incrementing
+          await setDoc(dailyDocRef, { steps: finalStepCount }, { merge: true });
+          
+          // Recalculate lifetime steps from all daily steps
+          const newLifetimeSteps = await calculateLifetimeFromDailySteps(currentUser.uid);
+          await updateDoc(userDocRef, { lifetimeTotalSteps: newLifetimeSteps });
+          
+          // Update level system with recalculated lifetime steps
+          await updateLifetimeSteps(newLifetimeSteps);
+          setLifetimeSteps(newLifetimeSteps);
         }
       }
       await AsyncStorage.setItem('lastSyncDate', todayString);
@@ -824,11 +1334,21 @@ export default function HomeScreen() {
         {/* Single ScrollView with all content */}
         <ScrollView 
           style={styles.scrollContainer}
-          contentContainerStyle={styles.scrollContentContainer}
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingBottom: 110 + insets.bottom + 30, // Tab bar height + bottom inset + buffer
+          }}
           showsVerticalScrollIndicator={false}
         >
           {/* Header */}
-          <View style={styles.headerContainer}>
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingHorizontal: 20,
+            paddingTop: 60 + insets.top, // Add top safe area
+            paddingBottom: 20,
+          }}>
             <View style={styles.profileSection}>
               <Pressable style={styles.avatar} onPress={() => router.push('/profile')}>
                 {/* 👈 UPDATED: Changed fallback icon color to blue */}
@@ -856,7 +1376,7 @@ export default function HomeScreen() {
                     style={styles.coinIcon}
                   />
                   <Text style={styles.coinText}>
-                    {totalEarnings >= 0 ? totalEarnings.toFixed(2) : '0.00'}
+                    {isEarningsLoading ? '...' : (totalEarnings >= 0 ? totalEarnings.toFixed(2) : '0.00')}
                   </Text>
                 </LinearGradient>
               </Animated.View>
@@ -908,8 +1428,22 @@ export default function HomeScreen() {
                 <Text style={styles.goalText}>of {dailyStepGoal.toLocaleString()} goal</Text>
                 
                 <View style={styles.locationDot}>
-                  <Ionicons name="location" size={12} color="#8BC34A" />
+                  <Ionicons name="walk" size={18} color="#8BC34A" />
                 </View>
+
+                <Text style={{ 
+                  color: '#ADFF2F',
+                  fontSize: 13,
+                  marginTop: 10,
+                  fontWeight: '600',
+                  maxWidth: 200,
+                  textAlign: 'center',
+                  textShadowColor: '#ADFF2F',
+                  textShadowOffset: { width: 0, height: 0 },
+                  textShadowRadius: 4,
+                  }}>
+                  Calories Burnt:{'\n'} {Math.floor(todaysSteps * 0.05)}
+                </Text>
               </View>
             </LinearGradient>
           </View>
@@ -978,18 +1512,25 @@ export default function HomeScreen() {
           {/* Weekly Progress Circles */}
           <View style={styles.weeklyContainer}>
             <Text style={styles.weeklyTitle}>This Week</Text>
-            <View style={styles.weeklyRow}>
-              {weeklyData.map((day, index) => (
-                <WeeklyProgressCircle
-                  key={index}
-                  dayLabel={day.dayLabel}
-                  date={day.date}
-                  steps={day.steps}
-                  goal={day.goal}
-                  isToday={day.isToday}
-                />
-              ))}
-            </View>
+            {isWeeklyDataLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#8BC34A" />
+                <Text style={styles.loadingText}>Loading weekly data...</Text>
+              </View>
+            ) : (
+              <View style={styles.weeklyRow}>
+                {weeklyData.map((day, index) => (
+                  <WeeklyProgressCircle
+                    key={index}
+                    dayLabel={day.dayLabel}
+                    date={day.date}
+                    steps={day.steps}
+                    goal={day.goal}
+                    isToday={day.isToday}
+                  />
+                ))}
+              </View>
+            )}
             
             {/* Toggle Button for Line Graph */}
             <TouchableOpacity 
@@ -998,13 +1539,13 @@ export default function HomeScreen() {
               activeOpacity={0.8}
             >
               <LinearGradient
-                colors={['rgba(139, 195, 74, 0.2)', 'rgba(76, 175, 80, 0.1)']}
+                colors={['rgba(76, 175, 80, 0.8)', 'rgba(139, 195, 74, 0.6)', 'rgba(76, 175, 80, 0.4)']}
                 style={styles.graphToggleGradient}
               >
                 <Ionicons 
                   name={showLineGraph ? "chevron-up" : "analytics"} 
                   size={20} 
-                  color="#8BC34A" 
+                  color="#FFFFFF" 
                 />
                 <Text style={styles.graphToggleText}>
                   {showLineGraph ? "Hide Trend" : "Show Trend"}
@@ -1203,7 +1744,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(100,181,246,0.2)', // 👈 CHANGED: Blue background instead of green
+    backgroundColor: 'rgba(100, 181, 246, 0.2)', // 👈 CHANGED: Blue background instead of green
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -1254,7 +1795,7 @@ const styles = StyleSheet.create({
   },
   boostBadge: {
     position: 'absolute',
-    top: 120,
+    top: 140,
     right: 60,
     width: 30,
     height: 60,
@@ -1278,7 +1819,7 @@ const styles = StyleSheet.create({
   },
   moodBadge: {
     position: 'absolute',
-    top: 120,
+    top: 150,
     left: 30,
     width: 60,
     height: 60,
@@ -1318,7 +1859,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 16,
-    elevation: 12,
+    elevation: 105,
   },
   stepInner: {
     position: 'absolute',
@@ -1363,6 +1904,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     paddingHorizontal: 10,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    width: '100%',
+  },
+  loadingText: {
+    color: '#BBBBBB',
+    fontSize: 14,
+    marginLeft: 10,
   },
   weeklyCircleContainer: {
     alignItems: 'center',
@@ -1489,7 +2042,7 @@ const styles = StyleSheet.create({
   weeklyGraphBackground: {
     borderRadius: 20,
     overflow: 'hidden',
-    elevation: 8,
+    elevation: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -1525,11 +2078,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   graphToggleButton: {
-    marginHorizontal: 20,
-    marginBottom: 20,
+    marginHorizontal: 50,
+    marginTop: 20,
+    marginBottom: 10,
     borderRadius: 15,
     overflow: 'hidden',
-    elevation: 3,
+    elevation: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,

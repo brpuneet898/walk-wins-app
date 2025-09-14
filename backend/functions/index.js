@@ -11,96 +11,23 @@ const db = admin.firestore();
 const expo = new Expo();
 
 // Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+let genAI = null;
 
+function getGeminiAI() {
+  if (!genAI) {
+    try {
+      const apiKey = functions.config().gemini.api_key;
+      genAI = new GoogleGenerativeAI(apiKey);
+    } catch (error) {
+      console.error("❌ Failed to initialize Gemini AI:", error);
+      throw error;
+    }
+  }
+  return genAI;
+}
 // Simple test function
 exports.testFunction = functions.https.onRequest((req, res) => {
   res.send("Hello from Firebase Functions!");
-});
-
-// 🧪 MANUAL TEST: Immediate notification test
-exports.testNotificationNow = onRequest({
-  cors: true,
-  invoker: "public"
-}, async (req, res) => {
-  console.log("🧪 Testing notification immediately...");
-  
-  try {
-    // Get all users with push tokens (including mock tokens for testing)
-    const usersSnapshot = await db.collection("users")
-      .where("pushToken", "!=", null)
-      .get();
-
-    if (usersSnapshot.empty) {
-      console.log("No users with push tokens found for test.");
-      return res.send("No users to notify");
-    }
-
-    const messages = [];
-    let processedUsers = 0;
-
-    for (const userDoc of usersSnapshot.docs) {
-      const userProfile = userDoc.data();
-      const userId = userDoc.id;
-
-      // For testing, accept both real tokens and mock tokens
-      const isRealToken = Expo.isExpoPushToken(userProfile.pushToken);
-      const isMockToken = userProfile.pushToken && userProfile.pushToken.startsWith('ExpoMockToken');
-      
-      if (!isRealToken && !isMockToken) {
-        console.log(`User ${userProfile.username} has invalid token. Skipping.`);
-        continue;
-      }
-
-      // Get current time for the test message
-      const now = new Date();
-      const timeString = now.toLocaleTimeString();
-      
-      const testMessage = `🧪 Hey ${userProfile.username || 'pookie'}! Immediate test at ${timeString}! Your notifications work! 💚✨`;
-
-      // Only send to real tokens, log mock tokens
-      if (isRealToken) {
-        messages.push({
-          to: userProfile.pushToken,
-          sound: "default",
-          title: "🧪 WalkWins Immediate Test",
-          body: testMessage,
-          data: { 
-            type: "immediate_test",
-            userId: userId,
-            testTime: timeString
-          },
-        });
-      } else if (isMockToken) {
-        console.log(`🧪 Would send to ${userProfile.username} with mock token: "${testMessage}"`);
-      }
-
-      processedUsers++;
-    }
-
-    // Send notifications in batches
-    let sentNotifications = 0;
-    if (messages.length > 0) {
-      const chunks = expo.chunkPushNotifications(messages);
-      for (const chunk of chunks) {
-        try {
-          const receipts = await expo.sendPushNotificationsAsync(chunk);
-          console.log("📤 Sent immediate test notification chunk:", receipts);
-          sentNotifications += chunk.length;
-        } catch (error) {
-          console.error("❌ Error sending immediate test notification chunk:", error);
-        }
-      }
-    }
-
-    const summary = `🧪 Immediate test complete! Processed: ${processedUsers} users, Sent: ${sentNotifications} real notifications, Mock users: ${processedUsers - sentNotifications}`;
-    console.log(summary);
-    res.send(summary);
-
-  } catch (error) {
-    console.error("💥 Error in immediate test:", error);
-    res.status(500).send(`Error: ${error.message}`);
-  }
 });
 
 // 🚀 PRODUCTION FUNCTION: Send AI-powered Pookie Notifications
@@ -156,7 +83,7 @@ User Details:
 
 Guidelines:
 - Keep it under 100 characters
-- Make it cute and encouraging (use "pookie" sometimes)
+- Make it cute and encouraging
 - Be specific to their progress and goals
 - Use emojis appropriately
 - Make it feel personal and motivating
@@ -166,7 +93,7 @@ Guidelines:
 Return only the notification message, nothing else.`;
 
         // Generate AI message
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = getGeminiAI().getGenerativeModel({ model: "gemini-1.5-flash" });
         const result = await model.generateContent(prompt);
         const aiMessage = result.response.text().trim();
         
@@ -274,135 +201,6 @@ exports.nightPookieNotifications = onSchedule("0 21 * * *", async (event) => {
   return await sendNotificationsToGroup("night");
 });
 
-// 🧪 TEMPORARY TEST FUNCTION: 3:05 AM notification test
-exports.testEarlyMorningNotification = onSchedule("5 3 * * *", async (event) => {
-  console.log("🧪 Running 3:05 AM test notification...");
-  
-  try {
-    // Get all users with push tokens (including mock tokens for testing)
-    const usersSnapshot = await db.collection("users")
-      .where("pushToken", "!=", null)
-      .get();
-
-    if (usersSnapshot.empty) {
-      console.log("No users with push tokens found for test.");
-      return { success: false, message: "No users to notify" };
-    }
-
-    const messages = [];
-    let processedUsers = 0;
-
-    for (const userDoc of usersSnapshot.docs) {
-      const userProfile = userDoc.data();
-      const userId = userDoc.id;
-
-      // For testing, accept both real tokens and mock tokens
-      const isRealToken = Expo.isExpoPushToken(userProfile.pushToken);
-      const isMockToken = userProfile.pushToken && userProfile.pushToken.startsWith('ExpoMockToken');
-      
-      if (!isRealToken && !isMockToken) {
-        console.log(`User ${userProfile.username} has invalid token. Skipping.`);
-        continue;
-      }
-
-      try {
-        // Get user's current step data
-        const today = new Date().toISOString().split('T')[0];
-        const dailyStepDoc = await db.doc(`users/${userId}/dailySteps/${today}`).get();
-        const todaySteps = dailyStepDoc.exists() ? dailyStepDoc.data().steps || 0 : 0;
-
-        // Create test prompt for 3:05 AM
-        const prompt = `Create a cute, motivational push notification for a fitness app user for a 3:05 AM test notification.
-
-User Details:
-- Name: ${userProfile.username || 'there'}
-- Steps today: ${todaySteps}
-- Daily goal: ${userProfile.dailyStepGoal || 10000}
-
-Guidelines:
-- Keep it under 100 characters
-- Make it a cute test message mentioning it's 3:05 AM
-- Use "pookie" and mention this is a test
-- Include emojis
-- Make it encouraging
-
-Return only the notification message.`;
-
-        // Generate AI message
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const result = await model.generateContent(prompt);
-        const aiMessage = result.response.text().trim();
-
-        // Only send to real tokens, log mock tokens
-        if (isRealToken) {
-          messages.push({
-            to: userProfile.pushToken,
-            sound: "default",
-            title: "🧪 WalkWins Test (3:05 AM)",
-            body: aiMessage,
-            data: { 
-              type: "test_early_morning",
-              userId: userId,
-              testTime: "3:05 AM",
-              stepsToday: todaySteps
-            },
-          });
-        } else if (isMockToken) {
-          console.log(`🧪 Would send to ${userProfile.username} with mock token: "${aiMessage}"`);
-        }
-
-      } catch (aiError) {
-        console.error(`❌ AI generation failed for user ${userProfile.username}:`, aiError);
-        
-        // Fallback message for testing
-        const testMessage = `Hey ${userProfile.username}! 🧪 It's 3:05 AM test time, pookie! This notification system works! 💚✨`;
-        
-        if (isRealToken) {
-          messages.push({
-            to: userProfile.pushToken,
-            sound: "default",
-            title: "🧪 WalkWins Test (3:05 AM)",
-            body: testMessage,
-            data: { 
-              type: "test_early_morning",
-              userId: userId,
-              testTime: "3:05 AM",
-              aiGenerated: false
-            },
-          });
-        } else if (isMockToken) {
-          console.log(`🧪 Would send to ${userProfile.username} with mock token: "${testMessage}"`);
-        }
-      }
-
-      processedUsers++;
-    }
-
-    // Send notifications in batches
-    let sentNotifications = 0;
-    if (messages.length > 0) {
-      const chunks = expo.chunkPushNotifications(messages);
-      for (const chunk of chunks) {
-        try {
-          const receipts = await expo.sendPushNotificationsAsync(chunk);
-          console.log("📤 Sent 3:05 AM test notification chunk:", receipts);
-          sentNotifications += chunk.length;
-        } catch (error) {
-          console.error("❌ Error sending 3:05 AM test notification chunk:", error);
-        }
-      }
-    }
-
-    const summary = `🧪 3:05 AM test complete! Processed: ${processedUsers} users, Sent: ${sentNotifications} real notifications, Mock users: ${processedUsers - sentNotifications}`;
-    console.log(summary);
-    return { success: true, message: summary };
-
-  } catch (error) {
-    console.error("💥 Error in 3:05 AM test:", error);
-    return { success: false, message: error.message };
-  }
-});
-
 // Helper function for scheduled notifications
 async function sendNotificationsToGroup(timeOfDay) {
   try {
@@ -473,7 +271,7 @@ Guidelines:
 Return only the notification message.`;
 
         // Generate AI message
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = getGeminiAI().getGenerativeModel({ model: "gemini-2.5-flash" });
         const result = await model.generateContent(prompt);
         const aiMessage = result.response.text().trim();
         

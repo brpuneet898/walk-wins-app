@@ -9,17 +9,17 @@ export interface LevelInfo {
 
 // Level configuration - 10 levels total
 export const LEVEL_CONFIG: LevelInfo[] = [
-  { level: 0, requiredSteps: 0, coinMultiplier: 0.01, name: "Beginner Walker", description: "Just getting started on your walking journey!" },
-  { level: 1, requiredSteps: 10000, coinMultiplier: 0.01, name: "Step Explorer", description: "You've taken your first 10,000 steps!" },
-  { level: 2, requiredSteps: 50000, coinMultiplier: 0.012, name: "Walking Enthusiast", description: "You're getting serious about walking!" }, // TESTING: Reduced for testing
-  { level: 3, requiredSteps: 150000, coinMultiplier: 0.014, name: "Fitness Walker", description: "150,000 steps - your dedication is showing!" },
-  { level: 4, requiredSteps: 300000, coinMultiplier: 0.016, name: "Step Master", description: "300,000 steps - you're a walking machine!" },
-  { level: 5, requiredSteps: 500000, coinMultiplier: 0.018, name: "Marathon Walker", description: "Half a million steps - incredible commitment!" },
-  { level: 6, requiredSteps: 750000, coinMultiplier: 0.020, name: "Walking Champion", description: "750,000 steps - you're a true champion!" },
-  { level: 7, requiredSteps: 1000000, coinMultiplier: 0.022, name: "Step Legend", description: "One million steps - legendary achievement!" },
-  { level: 8, requiredSteps: 1500000, coinMultiplier: 0.024, name: "Walking Hero", description: "1.5 million steps - you're a walking hero!" },
-  { level: 9, requiredSteps: 2000000, coinMultiplier: 0.026, name: "Ultimate Walker", description: "2 million steps - ultimate walking mastery!" },
-  { level: 10, requiredSteps: 3000000, coinMultiplier: 0.028, name: "Walking God", description: "3 million steps - you've achieved walking godhood!" }
+  { level: 0, requiredSteps: 0, coinMultiplier: 0.002, name: "Beginner Walker", description: "Just getting started on your walking journey!" },
+  { level: 1, requiredSteps: 10000, coinMultiplier: 0.002, name: "Step Explorer", description: "You've taken your first 10,000 steps!" },
+  { level: 2, requiredSteps: 50000, coinMultiplier: 0.0022, name: "Walking Enthusiast", description: "You're getting serious about walking!" }, // TESTING: Reduced for testing
+  { level: 3, requiredSteps: 150000, coinMultiplier: 0.0024, name: "Fitness Walker", description: "150,000 steps - your dedication is showing!" },
+  { level: 4, requiredSteps: 300000, coinMultiplier: 0.0026, name: "Step Master", description: "300,000 steps - you're a walking machine!" },
+  { level: 5, requiredSteps: 500000, coinMultiplier: 0.0028, name: "Marathon Walker", description: "Half a million steps - incredible commitment!" },
+  { level: 6, requiredSteps: 750000, coinMultiplier: 0.003, name: "Walking Champion", description: "750,000 steps - you're a true champion!" },
+  { level: 7, requiredSteps: 1000000, coinMultiplier: 0.0032, name: "Step Legend", description: "One million steps - legendary achievement!" },
+  { level: 8, requiredSteps: 1500000, coinMultiplier: 0.0034, name: "Walking Hero", description: "1.5 million steps - you're a walking hero!" },
+  { level: 9, requiredSteps: 2000000, coinMultiplier: 0.0036, name: "Ultimate Walker", description: "2 million steps - ultimate walking mastery!" },
+  { level: 10, requiredSteps: 3000000, coinMultiplier: 0.0038, name: "Walking God", description: "3 million steps - you've achieved walking godhood!" }
 ];
 
 // Calculate user's current level based on lifetime steps
@@ -87,5 +87,5 @@ export function formatSteps(steps: number): string {
 
 // Format coins without currency symbol for level display
 export function formatCoins(coins: number): string {
-  return coins.toFixed(3);
+  return coins.toFixed(4);
 }

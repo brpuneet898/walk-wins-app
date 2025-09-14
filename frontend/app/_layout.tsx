@@ -17,6 +17,8 @@ import GlobalLevelUpModal from '../components/GlobalLevelUpModal';
 import { AudioProvider } from '../context/AudioContext';
 // ⭐️ 5. Import the SplashScreen component
 import SplashScreen from '../components/SplashScreen';
+// ⭐️ 6. Import SafeAreaProvider for handling device safe areas
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -84,20 +86,22 @@ function RootLayoutNav() {
 
   // The ThemeProvider and Stack navigator remain the same
   return (
-    <PushNotificationManager>
-      <LevelProvider>
-        <AudioProvider>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-            <Stack>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-              <Stack.Screen name="+not-found" />
-            </Stack>
-            {/* ⭐️ Global level-up modal that can appear on any screen */}
-            <GlobalLevelUpModal />
-          </ThemeProvider>
-        </AudioProvider>
-      </LevelProvider>
-    </PushNotificationManager>
+    <SafeAreaProvider>
+      <PushNotificationManager>
+        <LevelProvider>
+          <AudioProvider>
+            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+              <Stack>
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                <Stack.Screen name="+not-found" />
+              </Stack>
+              {/* ⭐️ Global level-up modal that can appear on any screen */}
+              <GlobalLevelUpModal />
+            </ThemeProvider>
+          </AudioProvider>
+        </LevelProvider>
+      </PushNotificationManager>
+    </SafeAreaProvider>
   );
 }

@@ -9,14 +9,21 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app uses location to show your position on the map and track your walks."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "permissions": ["android.permission.ACTIVITY_RECOGNITION"],
+      "permissions": [
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
       "edgeToEdgeEnabled": true,
       "package": "com.devanshu898.frontend"
     },
@@ -34,6 +41,13 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow WalkWins to access your photos to save screenshots.",
+          "savePhotosPermission": "Allow WalkWins to save screenshots to your gallery."
         }
       ]
     ],
